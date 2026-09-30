@@ -270,14 +270,40 @@ function healthCheck() {
 __name(healthCheck, "healthCheck");
 function agentCard(o) {
   return new Response(JSON.stringify({
+    schemaVersion: "1.0",
     name: "HussamFaroug Agent",
-    description: "AI agent for hussamfaroug.com",
-    url: o,
     version: "1.0.0",
-    capabilities: { mcp: true, a2a: true, streaming: false },
-    authentication: { type: "oauth2", authorizationUrl: o + "/oauth/authorize", tokenUrl: o + "/token" },
-    skills: [{ name: "get_site_info", description: "Get information about hussamfaroug.com" }]
-  }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" } });
+    description: "AI agent for hussamfaroug.com providing API access, content retrieval, and agent-to-agent communication.",
+    url: o + "/a2a",
+    protocolVersion: "1.0",
+    preferredTransport: "jsonrpc",
+    supportedInterfaces: [{
+      protocol: "jsonrpc",
+      version: "2.0",
+      url: o + "/a2a",
+      transport: "http",
+      streaming: true,
+      pushNotifications: true
+    }],
+    capabilities: { streaming: true, pushNotifications: true, stateTransitionHistory: true },
+    skills: [
+      { id: "api-query", name: "API Query", description: "Query the hussamfaroug.com API catalog" },
+      { id: "content-retrieval", name: "Content Retrieval", description: "Retrieve content from hussamfaroug.com" },
+      { id: "agent-handoff", name: "Agent Handoff", description: "Delegate tasks via A2A protocol" },
+      { id: "mcp-tools", name: "MCP Tools", description: "Access MCP server tools" }
+    ],
+    authentication: {
+      type: "oauth",
+      authorizationServer: o + "/.well-known/oauth-authorization-server",
+      protectedResourceMetadata: o + "/.well-known/oauth-protected-resource",
+      documentation: o + "/auth.md"
+    },
+    links: {
+      apiCatalog: o + "/.well-known/api-catalog",
+      mcpServerCard: o + "/.well-known/mcp/server-card.json",
+      authMd: o + "/auth.md"
+    }
+  }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
 }
 __name(agentCard, "agentCard");
 function mcpCard(o) {
