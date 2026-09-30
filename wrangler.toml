@@ -1,6 +1,7 @@
 name = "hussamfaroug-com"
 main = "hussamfaroug-com-worker.js"
 compatibility_date = "2024-01-01"
+workers_dev = true
 
 routes = [
   { pattern = "hussamfaroug.com/*", zone_name = "hussamfaroug.com" }
