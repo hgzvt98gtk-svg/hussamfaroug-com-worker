@@ -1,0 +1,28 @@
+name: Deploy hussamfaroug-com Worker
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allow manual triggers from the Actions tab
+
+jobs:
+  deploy:
+    name: Build & Deploy Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # wrangler.toml at repo root tells wrangler-action which Worker to deploy
+          # No build step needed — hussamfaroug-com-worker.js is plain JS (no bundling)
+          command: deploy
