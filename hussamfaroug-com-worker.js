@@ -4,6 +4,7 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 // worker.js
 var O = "https://hgzvt98gtk-svg-github-io.pages.dev";
 var C = "admin@hussamfaroug.com";
+var encoder = new TextEncoder();
 function b64u(b) {
   return btoa(String.fromCharCode.apply(null, b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
@@ -43,12 +44,12 @@ async function botAuth(req, env) {
     }
   }
   var x = pubJwk.x;
-  var th = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ crv: "Ed25519", kty: "OKP", x })))));
+  var th = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(JSON.stringify({ crv: "Ed25519", kty: "OKP", x })))));
   var j = JSON.stringify({ keys: [{ kty: "OKP", crv: "Ed25519", kid: th, x, alg: "EdDSA" }] });
   var h = new URL(req.url).host, cr = Math.floor(Date.now() / 1e3), ex = cr + 300;
   var si = 'sig1=("@authority" "signature-agent");created=' + cr + ';keyid="' + th + '";alg="ed25519";expires=' + ex + ';tag="web-bot-auth"';
   var sb = '"@authority": ' + h + '\n"signature-agent": ' + o + '\n"@created": ' + cr + '\n"@expires": ' + ex;
-  var sg = btoa(String.fromCharCode.apply(null, new Uint8Array(await crypto.subtle.sign("Ed25519", ck, new TextEncoder().encode(sb)))));
+  var sg = btoa(String.fromCharCode.apply(null, new Uint8Array(await crypto.subtle.sign("Ed25519", ck, encoder.encode(sb)))));
   return new Response(j, { headers: {
     "Content-Type": "application/http-message-signatures-directory+json",
     "Access-Control-Allow-Origin": "*",
@@ -457,7 +458,7 @@ async function handleRequest(req, env) {
   if (acceptMd) {
     var html = await r.text();
     var md = convertMd(html, o);
-    var tokens = Math.max(1, Math.ceil(new TextEncoder().encode(md).length / 4));
+    var tokens = Math.max(1, Math.ceil(encoder.encode(md).length / 4));
     return new Response(md, {
       headers: {
         "Content-Type": "text/markdown; charset=utf-8",
@@ -468,14 +469,15 @@ async function handleRequest(req, env) {
     });
   }
   var h = new Headers(r.headers);
-  var n = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(Date.now()) + Math.random())))).substring(0, 32);
+  var nonceBytes = crypto.getRandomValues(new Uint8Array(24));
+  var n = b64u(nonceBytes);
   h.set("Link", linkHdr(o));
   h = secHdrs(h, n);
   var hb = await r.text();
   hb = hb.replace(/<script[^>]*src=["'][^"']*\.webmcp\/bridge\.js[^"']*["'][^>]*><\/script>/gi, "");
   var ws = webmcp(n);
   var mh2 = hb.indexOf("</body>") !== -1 ? hb.replace("</body>", ws + "</body>") : hb.indexOf("</head>") !== -1 ? hb.replace("</head>", ws + "</head>") : hb + ws;
-  h.set("Content-Length", new TextEncoder().encode(mh2).length.toString());
+  h.set("Content-Length", encoder.encode(mh2).length.toString());
   return new Response(mh2, { status: r.status, headers: h });
 }
 __name(handleRequest, "handleRequest");
