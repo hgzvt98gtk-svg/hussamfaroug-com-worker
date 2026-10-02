@@ -14,8 +14,10 @@ async function botAuth(req, env) {
   var pubJwkStr = null, privJwkStr = null;
   try {
     if (kv) {
-      pubJwkStr = await kv.get("BOT_AUTH_PUBKEY_JWK");
-      privJwkStr = await kv.get("BOT_AUTH_PRIVKEY_JWK");
+      [pubJwkStr, privJwkStr] = await Promise.all([
+        kv.get("BOT_AUTH_PUBKEY_JWK"),
+        kv.get("BOT_AUTH_PRIVKEY_JWK")
+      ]);
     }
   } catch (e) {
   }
@@ -32,8 +34,10 @@ async function botAuth(req, env) {
     privJwkStr = JSON.stringify(privJwk);
     try {
       if (kv) {
-        await kv.put("BOT_AUTH_PUBKEY_JWK", pubJwkStr);
-        await kv.put("BOT_AUTH_PRIVKEY_JWK", privJwkStr);
+        await Promise.all([
+          kv.put("BOT_AUTH_PUBKEY_JWK", pubJwkStr),
+          kv.put("BOT_AUTH_PRIVKEY_JWK", privJwkStr)
+        ]);
       }
     } catch (e) {
     }
@@ -55,6 +59,19 @@ async function botAuth(req, env) {
   } });
 }
 __name(botAuth, "botAuth");
+function agentAuthMetadata(o) {
+  return {
+    register_uri: o + "/agent/auth",
+    identity_types_supported: ["identity_assertion", "anonymous"],
+    credential_types_supported: ["client_secret", "private_key_jwt", "signed_http_request"],
+    authorization_endpoint: o + "/oauth/authorize",
+    token_endpoint: o + "/token",
+    revocation_uri: o + "/agent/revoke",
+    claim_uri: o + "/agent/claims",
+    documentation_uri: o + "/auth.md"
+  };
+}
+__name(agentAuthMetadata, "agentAuthMetadata");
 function authMd(o) {
   var tb = String.fromCharCode(96, 96, 96);
   return new Response([
@@ -66,16 +83,7 @@ function authMd(o) {
     "",
     tb + "json",
     JSON.stringify({
-      agent_auth: {
-        register_uri: o + "/agent/auth",
-        identity_types_supported: ["identity_assertion", "anonymous"],
-        credential_types_supported: ["client_secret", "private_key_jwt", "signed_http_request"],
-        authorization_endpoint: o + "/oauth/authorize",
-        token_endpoint: o + "/token",
-        revocation_uri: o + "/agent/revoke",
-        claim_uri: o + "/agent/claims",
-        documentation_uri: o + "/auth.md"
-      }
+      agent_auth: agentAuthMetadata(o)
     }, null, 2),
     tb,
     "",
@@ -157,16 +165,7 @@ function oauthAs(o) {
     response_types_supported: ["code", "token"],
     grant_types_supported: ["authorization_code", "client_credentials", "refresh_token"],
     token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
-    agent_auth: {
-      register_uri: o + "/agent/auth",
-      identity_types_supported: ["identity_assertion", "anonymous"],
-      credential_types_supported: ["client_secret", "private_key_jwt", "signed_http_request"],
-      claim_uri: o + "/agent/claims",
-      revocation_uri: o + "/agent/revoke",
-      authorization_endpoint: o + "/oauth/authorize",
-      token_endpoint: o + "/token",
-      documentation_uri: o + "/auth.md"
-    },
+    agent_auth: agentAuthMetadata(o),
     documentation: o + "/auth.md"
   }, null, 2), { headers: {
     "Content-Type": "application/json",
@@ -183,16 +182,7 @@ function oauthPr(o) {
     bearer_methods_supported: ["header"],
     resource_documentation: o + "/auth.md",
     jwks_uri: o + "/.well-known/http-message-signatures-directory",
-    agent_auth: {
-      register_uri: o + "/agent/auth",
-      identity_types_supported: ["identity_assertion", "anonymous"],
-      credential_types_supported: ["client_secret", "private_key_jwt", "signed_http_request"],
-      claim_uri: o + "/agent/claims",
-      revocation_uri: o + "/agent/revoke",
-      authorization_endpoint: o + "/oauth/authorize",
-      token_endpoint: o + "/token",
-      documentation_uri: o + "/auth.md"
-    }
+    agent_auth: agentAuthMetadata(o)
   }, null, 2), { headers: {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -446,7 +436,7 @@ async function handleRequest(req, env) {
   var o = u.origin;
   var isMaintenance = false;
   try {
-    isMaintenance = await env.FLAGS.getBooleanValue("maintenance-mode", false);
+    isMaintenance = await env.FLAGS?.getBooleanValue("maintenance-mode", false);
   } catch (e) {
   }
   if (isMaintenance) {
@@ -477,19 +467,16 @@ async function handleRequest(req, env) {
       }
     });
   }
-  if (r.headers.get("Content-Type", "").indexOf("text/html") !== -1) {
-    var h = new Headers(r.headers);
-    var n = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(Date.now()) + Math.random())))).substring(0, 32);
-    h.set("Link", linkHdr(o));
-    h = secHdrs(h, n);
-    var hb = await r.text();
-    hb = hb.replace(/<script[^>]*src=["'][^"']*\.webmcp\/bridge\.js[^"']*["'][^>]*><\/script>/gi, "");
-    var ws = webmcp(n);
-    var mh2 = hb.indexOf("</body>") !== -1 ? hb.replace("</body>", ws + "</body>") : hb.indexOf("</head>") !== -1 ? hb.replace("</head>", ws + "</head>") : hb + ws;
-    h.set("Content-Length", new TextEncoder().encode(mh2).length.toString());
-    return new Response(mh2, { status: r.status, headers: h });
-  }
-  return new Response(r.body, { status: r.status, headers: r.headers });
+  var h = new Headers(r.headers);
+  var n = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(Date.now()) + Math.random())))).substring(0, 32);
+  h.set("Link", linkHdr(o));
+  h = secHdrs(h, n);
+  var hb = await r.text();
+  hb = hb.replace(/<script[^>]*src=["'][^"']*\.webmcp\/bridge\.js[^"']*["'][^>]*><\/script>/gi, "");
+  var ws = webmcp(n);
+  var mh2 = hb.indexOf("</body>") !== -1 ? hb.replace("</body>", ws + "</body>") : hb.indexOf("</head>") !== -1 ? hb.replace("</head>", ws + "</head>") : hb + ws;
+  h.set("Content-Length", new TextEncoder().encode(mh2).length.toString());
+  return new Response(mh2, { status: r.status, headers: h });
 }
 __name(handleRequest, "handleRequest");
 export {
