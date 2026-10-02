@@ -25,6 +25,11 @@ async function buildBotAuthKey(privJwk) {
   }
   var ck = await crypto.subtle.importKey("jwk", privJwk, { name: "Ed25519" }, false, ["sign"]);
   var x = privJwk.x;
+  var vk = await crypto.subtle.importKey("jwk", { kty: "OKP", crv: "Ed25519", x }, { name: "Ed25519" }, false, ["verify"]);
+  var probe = encoder.encode("bot-auth-key-check");
+  if (!await crypto.subtle.verify("Ed25519", vk, await crypto.subtle.sign("Ed25519", ck, probe), probe)) {
+    throw new Error("bot auth private key does not match its public component");
+  }
   var kid = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(JSON.stringify({ crv: "Ed25519", kty: "OKP", x })))));
   var body = JSON.stringify({ keys: [{ kty: "OKP", crv: "Ed25519", kid, x, alg: "EdDSA" }] });
   return { ck, kid, body };
@@ -52,16 +57,19 @@ async function loadBotAuthKey(kv) {
       var pubJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
       await kv.put("BOT_AUTH_PRIVKEY_JWK", JSON.stringify(privJwk));
       await kv.put("BOT_AUTH_PUBKEY_JWK", JSON.stringify(pubJwk));
+      var storedPriv = await kv.get("BOT_AUTH_PRIVKEY_JWK");
+      if (storedPriv === null) throw new Error("bot auth private key not readable after write");
+      var stored = JSON.parse(storedPriv);
+      if (stored.d !== privJwk.d) key = await buildBotAuthKey(stored);
     }
   }
-  key.timing = "kv;dur=" + (t1 - t0) + ", crypto;dur=" + (Date.now() - t1);
+  console.log("bot auth key loaded: kv " + (t1 - t0) + "ms, crypto " + (Date.now() - t1) + "ms");
   return key;
 }
 __name(loadBotAuthKey, "loadBotAuthKey");
 async function botAuth(req, env) {
   var u = new URL(req.url), o = u.origin, h = u.host;
-  var hit = botAuthKeyPromise !== null;
-  if (!hit) {
+  if (botAuthKeyPromise === null) {
     botAuthKeyPromise = loadBotAuthKey(env && env.SITE_CONFIG);
     botAuthKeyPromise.catch(function() {
       botAuthKeyPromise = null;
@@ -88,7 +96,6 @@ async function botAuth(req, env) {
     "Signature-Agent": '"' + o + '"',
     "Signature-Input": si,
     "Signature": "sig1=:" + sg + ":",
-    "Server-Timing": hit ? "key-cache;desc=hit" : "key-cache;desc=miss, " + key.timing,
     "Cache-Control": PUBLIC_CACHE_CONTROL
   } });
 }
