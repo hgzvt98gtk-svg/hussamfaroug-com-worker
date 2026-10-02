@@ -4,10 +4,20 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 // worker.js
 var O = "https://hgzvt98gtk-svg-github-io.pages.dev";
 var C = "admin@hussamfaroug.com";
+var encoder = new TextEncoder();
+var PUBLIC_CACHE_CONTROL = "public, max-age=3600";
 function b64u(b) {
   return btoa(String.fromCharCode.apply(null, b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 __name(b64u, "b64u");
+function cachedJson(data, contentType) {
+  return new Response(JSON.stringify(data, null, 2), { headers: {
+    "Content-Type": contentType || "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": PUBLIC_CACHE_CONTROL
+  } });
+}
+__name(cachedJson, "cachedJson");
 async function botAuth(req, env) {
   var o = new URL(req.url).origin;
   var kv = env && env.SITE_CONFIG;
@@ -43,19 +53,19 @@ async function botAuth(req, env) {
     }
   }
   var x = pubJwk.x;
-  var th = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ crv: "Ed25519", kty: "OKP", x })))));
+  var th = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(JSON.stringify({ crv: "Ed25519", kty: "OKP", x })))));
   var j = JSON.stringify({ keys: [{ kty: "OKP", crv: "Ed25519", kid: th, x, alg: "EdDSA" }] });
   var h = new URL(req.url).host, cr = Math.floor(Date.now() / 1e3), ex = cr + 300;
   var si = 'sig1=("@authority" "signature-agent");created=' + cr + ';keyid="' + th + '";alg="ed25519";expires=' + ex + ';tag="web-bot-auth"';
   var sb = '"@authority": ' + h + '\n"signature-agent": ' + o + '\n"@created": ' + cr + '\n"@expires": ' + ex;
-  var sg = btoa(String.fromCharCode.apply(null, new Uint8Array(await crypto.subtle.sign("Ed25519", ck, new TextEncoder().encode(sb)))));
+  var sg = btoa(String.fromCharCode.apply(null, new Uint8Array(await crypto.subtle.sign("Ed25519", ck, encoder.encode(sb)))));
   return new Response(j, { headers: {
     "Content-Type": "application/http-message-signatures-directory+json",
     "Access-Control-Allow-Origin": "*",
     "Signature-Agent": '"' + o + '"',
     "Signature-Input": si,
     "Signature": "sig1=:" + sg + ":",
-    "Cache-Control": "public, max-age=3600"
+    "Cache-Control": PUBLIC_CACHE_CONTROL
   } });
 }
 __name(botAuth, "botAuth");
@@ -149,12 +159,12 @@ function authMd(o) {
   ].join("\n"), { headers: {
     "Content-Type": "text/markdown",
     "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "public, max-age=3600"
+    "Cache-Control": PUBLIC_CACHE_CONTROL
   } });
 }
 __name(authMd, "authMd");
 function oauthAs(o) {
-  return new Response(JSON.stringify({
+  return cachedJson({
     issuer: o,
     authorization_endpoint: o + "/oauth/authorize",
     token_endpoint: o + "/token",
@@ -167,15 +177,11 @@ function oauthAs(o) {
     token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
     agent_auth: agentAuthMetadata(o),
     documentation: o + "/auth.md"
-  }, null, 2), { headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "public, max-age=3600"
-  } });
+  });
 }
 __name(oauthAs, "oauthAs");
 function oauthPr(o) {
-  return new Response(JSON.stringify({
+  return cachedJson({
     resource: o,
     authorization_servers: [o],
     scopes_supported: ["read", "write", "agent:register"],
@@ -183,15 +189,11 @@ function oauthPr(o) {
     resource_documentation: o + "/auth.md",
     jwks_uri: o + "/.well-known/http-message-signatures-directory",
     agent_auth: agentAuthMetadata(o)
-  }, null, 2), { headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "public, max-age=3600"
-  } });
+  });
 }
 __name(oauthPr, "oauthPr");
 function openid(o) {
-  return new Response(JSON.stringify({
+  return cachedJson({
     issuer: o,
     authorization_endpoint: o + "/oauth/authorize",
     token_endpoint: o + "/token",
@@ -203,11 +205,7 @@ function openid(o) {
     grant_types_supported: ["authorization_code", "client_credentials", "refresh_token"],
     token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "none"],
     claims_supported: ["sub", "email", "email_verified", "name", "groups"]
-  }, null, 2), { headers: {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "public, max-age=3600"
-  } });
+  });
 }
 __name(openid, "openid");
 function mcpMetadata(o) {
@@ -220,11 +218,11 @@ function mcpMetadata(o) {
 }
 __name(mcpMetadata, "mcpMetadata");
 function mcpJson(o) {
-  return new Response(JSON.stringify(mcpMetadata(o), null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" } });
+  return cachedJson(mcpMetadata(o));
 }
 __name(mcpJson, "mcpJson");
 function ard(o) {
-  return new Response(JSON.stringify({
+  return cachedJson({
     linkset: [
       { anchor: o, href: o + "/.well-known/mcp/server-card.json", rel: "service-meta", type: "application/vnd.mcp.server+json", title: "HussamFaroug MCP Server", description: "MCP server for hussamfaroug.com" },
       { anchor: o, href: o + "/.well-known/agent-card.json", rel: "agent", type: "application/vnd.a2a.agent+json", title: "HussamFaroug A2A Agent", description: "A2A-compatible AI agent for hussamfaroug.com" },
@@ -232,11 +230,11 @@ function ard(o) {
       { anchor: o, href: o + "/auth.md", rel: "service-doc", type: "text/markdown", title: "Agent Auth Documentation", description: "How to register a credential for hussamfaroug.com" },
       { anchor: o, href: o + "/.well-known/health", rel: "status", type: "application/json", title: "Health Check", description: "Service health endpoint" }
     ]
-  }, null, 2), { headers: { "Content-Type": "application/linkset+json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" } });
+  }, "application/linkset+json");
 }
 __name(ard, "ard");
 function aiCatalog(o) {
-  return new Response(JSON.stringify({
+  return cachedJson({
     specVersion: "0.1.0",
     host: { name: "hussamfaroug.com", description: "Personal website for Hussam Faroug - AI agent-ready", url: o },
     entries: [
@@ -244,17 +242,17 @@ function aiCatalog(o) {
       { identifier: "urn:air:hussamfaroug.com:a2a:agent", displayName: "HussamFaroug A2A Agent", type: "application/vnd.a2a.agent+json", url: o + "/.well-known/agent-card.json", description: "A2A-compatible AI agent for hussamfaroug.com", representativeQueries: ["what is the agent card for hussamfaroug.com", "how do I interact with the hussamfaroug agent"] },
       { identifier: "urn:air:hussamfaroug.com:auth", displayName: "HussamFaroug Auth", type: "application/json", url: o + "/.well-known/oauth-authorization-server", description: "OAuth authorization server metadata for hussamfaroug.com", representativeQueries: ["how do I authenticate with hussamfaroug.com", "what OAuth endpoints does hussamfaroug.com support"] }
     ]
-  }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" } });
+  });
 }
 __name(aiCatalog, "aiCatalog");
 function agentSkillsIndex(o) {
-  return new Response(JSON.stringify({
+  return cachedJson({
     $schema: "https://agentskills.io/schemas/agent-skills-index.v0.2.json",
     skills: [
       { name: "get_site_info", type: "tool", description: "Get information about hussamfaroug.com", url: o + "/.well-known/agent-skills/get_site_info/SKILL.md", sha256: "0000000000000000000000000000000000000000000000000000000000000000" },
       { name: "agent_auth", type: "skill", description: "Register a credential for hussamfaroug.com", url: o + "/auth.md", sha256: "0000000000000000000000000000000000000000000000000000000000000000" }
     ]
-  }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" } });
+  });
 }
 __name(agentSkillsIndex, "agentSkillsIndex");
 function healthCheck() {
@@ -457,7 +455,7 @@ async function handleRequest(req, env) {
   if (acceptMd) {
     var html = await r.text();
     var md = convertMd(html, o);
-    var tokens = Math.max(1, Math.ceil(new TextEncoder().encode(md).length / 4));
+    var tokens = Math.max(1, Math.ceil(encoder.encode(md).length / 4));
     return new Response(md, {
       headers: {
         "Content-Type": "text/markdown; charset=utf-8",
@@ -468,14 +466,15 @@ async function handleRequest(req, env) {
     });
   }
   var h = new Headers(r.headers);
-  var n = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(Date.now()) + Math.random())))).substring(0, 32);
+  var nonceBytes = crypto.getRandomValues(new Uint8Array(24));
+  var n = b64u(nonceBytes);
   h.set("Link", linkHdr(o));
   h = secHdrs(h, n);
   var hb = await r.text();
   hb = hb.replace(/<script[^>]*src=["'][^"']*\.webmcp\/bridge\.js[^"']*["'][^>]*><\/script>/gi, "");
   var ws = webmcp(n);
   var mh2 = hb.indexOf("</body>") !== -1 ? hb.replace("</body>", ws + "</body>") : hb.indexOf("</head>") !== -1 ? hb.replace("</head>", ws + "</head>") : hb + ws;
-  h.set("Content-Length", new TextEncoder().encode(mh2).length.toString());
+  h.set("Content-Length", encoder.encode(mh2).length.toString());
   return new Response(mh2, { status: r.status, headers: h });
 }
 __name(handleRequest, "handleRequest");
