@@ -393,13 +393,13 @@ function convertMd(html, url) {
   b = b.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, function(_, c) {
     var it = c.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
     return "\n\n" + it.map(function(x) {
-      return "- " + mdClean(x.replace(/<li[^>]*>|<\/li>/gi, ""));
+      return "- " + mdClean(x);
     }).join("\n") + "\n\n";
   });
   b = b.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, function(_, c) {
     var it = c.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
     return "\n\n" + it.map(function(x, i2) {
-      return i2 + 1 + ". " + mdClean(x.replace(/<li[^>]*>|<\/li>/gi, ""));
+      return i2 + 1 + ". " + mdClean(x);
     }).join("\n") + "\n\n";
   });
   b = b.replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, function(_, c) {
