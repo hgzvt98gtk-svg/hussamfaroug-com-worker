@@ -345,7 +345,7 @@ function mdDec(s) {
 }
 __name(mdDec, "mdDec");
 function mdClean(h) {
-  return h.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  return h.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 __name(mdClean, "mdClean");
 function mdRu(h, b) {
