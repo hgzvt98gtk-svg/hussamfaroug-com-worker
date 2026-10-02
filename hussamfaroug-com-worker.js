@@ -446,7 +446,7 @@ async function handleRequest(req, env) {
   var o = u.origin;
   var isMaintenance = false;
   try {
-    isMaintenance = await env.FLAGS.getBooleanValue("maintenance-mode", false);
+    isMaintenance = await env.FLAGS?.getBooleanValue("maintenance-mode", false);
   } catch (e) {
   }
   if (isMaintenance) {
