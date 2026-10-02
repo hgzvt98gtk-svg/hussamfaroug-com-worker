@@ -14,8 +14,10 @@ async function botAuth(req, env) {
   var pubJwkStr = null, privJwkStr = null;
   try {
     if (kv) {
-      pubJwkStr = await kv.get("BOT_AUTH_PUBKEY_JWK");
-      privJwkStr = await kv.get("BOT_AUTH_PRIVKEY_JWK");
+      [pubJwkStr, privJwkStr] = await Promise.all([
+        kv.get("BOT_AUTH_PUBKEY_JWK"),
+        kv.get("BOT_AUTH_PRIVKEY_JWK")
+      ]);
     }
   } catch (e) {
   }
@@ -32,8 +34,10 @@ async function botAuth(req, env) {
     privJwkStr = JSON.stringify(privJwk);
     try {
       if (kv) {
-        await kv.put("BOT_AUTH_PUBKEY_JWK", pubJwkStr);
-        await kv.put("BOT_AUTH_PRIVKEY_JWK", privJwkStr);
+        await Promise.all([
+          kv.put("BOT_AUTH_PUBKEY_JWK", pubJwkStr),
+          kv.put("BOT_AUTH_PRIVKEY_JWK", privJwkStr)
+        ]);
       }
     } catch (e) {
     }
