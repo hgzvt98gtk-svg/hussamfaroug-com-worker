@@ -59,6 +59,19 @@ async function botAuth(req, env) {
   } });
 }
 __name(botAuth, "botAuth");
+function agentAuthMetadata(o) {
+  return {
+    register_uri: o + "/agent/auth",
+    identity_types_supported: ["identity_assertion", "anonymous"],
+    credential_types_supported: ["client_secret", "private_key_jwt", "signed_http_request"],
+    authorization_endpoint: o + "/oauth/authorize",
+    token_endpoint: o + "/token",
+    revocation_uri: o + "/agent/revoke",
+    claim_uri: o + "/agent/claims",
+    documentation_uri: o + "/auth.md"
+  };
+}
+__name(agentAuthMetadata, "agentAuthMetadata");
 function authMd(o) {
   var tb = String.fromCharCode(96, 96, 96);
   return new Response([
@@ -70,16 +83,7 @@ function authMd(o) {
     "",
     tb + "json",
     JSON.stringify({
-      agent_auth: {
-        register_uri: o + "/agent/auth",
-        identity_types_supported: ["identity_assertion", "anonymous"],
-        credential_types_supported: ["client_secret", "private_key_jwt", "signed_http_request"],
-        authorization_endpoint: o + "/oauth/authorize",
-        token_endpoint: o + "/token",
-        revocation_uri: o + "/agent/revoke",
-        claim_uri: o + "/agent/claims",
-        documentation_uri: o + "/auth.md"
-      }
+      agent_auth: agentAuthMetadata(o)
     }, null, 2),
     tb,
     "",
@@ -161,16 +165,7 @@ function oauthAs(o) {
     response_types_supported: ["code", "token"],
     grant_types_supported: ["authorization_code", "client_credentials", "refresh_token"],
     token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
-    agent_auth: {
-      register_uri: o + "/agent/auth",
-      identity_types_supported: ["identity_assertion", "anonymous"],
-      credential_types_supported: ["client_secret", "private_key_jwt", "signed_http_request"],
-      claim_uri: o + "/agent/claims",
-      revocation_uri: o + "/agent/revoke",
-      authorization_endpoint: o + "/oauth/authorize",
-      token_endpoint: o + "/token",
-      documentation_uri: o + "/auth.md"
-    },
+    agent_auth: agentAuthMetadata(o),
     documentation: o + "/auth.md"
   }, null, 2), { headers: {
     "Content-Type": "application/json",
@@ -187,16 +182,7 @@ function oauthPr(o) {
     bearer_methods_supported: ["header"],
     resource_documentation: o + "/auth.md",
     jwks_uri: o + "/.well-known/http-message-signatures-directory",
-    agent_auth: {
-      register_uri: o + "/agent/auth",
-      identity_types_supported: ["identity_assertion", "anonymous"],
-      credential_types_supported: ["client_secret", "private_key_jwt", "signed_http_request"],
-      claim_uri: o + "/agent/claims",
-      revocation_uri: o + "/agent/revoke",
-      authorization_endpoint: o + "/oauth/authorize",
-      token_endpoint: o + "/token",
-      documentation_uri: o + "/auth.md"
-    }
+    agent_auth: agentAuthMetadata(o)
   }, null, 2), { headers: {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
