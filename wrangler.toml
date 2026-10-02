@@ -7,9 +7,6 @@ routes = [
   { pattern = "hussamfaroug.com/*", zone_name = "hussamfaroug.com" }
 ]
 
-[triggers]
-crons = ["*/30 * * * *"]
-
 [[kv_namespaces]]
 binding = "SITE_CONFIG"
 id = "b36f257a4cb045028cbc637027acb086"

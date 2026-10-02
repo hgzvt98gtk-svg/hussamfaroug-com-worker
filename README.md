@@ -54,6 +54,6 @@ This clears all 4 CASB findings from your Cloudflare Security Center.
 
 The Worker code references `env.FLAGS.getBooleanValue("maintenance-mode", false)`. This binding is **not** in `wrangler.toml` because it's not configured in the dashboard. The code has a try/catch around it, so if the binding is missing, the Worker still works — maintenance mode just won't function.
 
-## ⚠️ Cron trigger
+## Cron trigger
 
-The `wrangler.toml` includes `[triggers] crons = ["*/30 * * * *"]` to match the cron trigger currently configured in the dashboard. Note: the Worker code does not have a `scheduled()` handler, so the cron trigger runs but doesn't execute any code. If you want to remove the cron trigger, simply delete the `[triggers]` section from `wrangler.toml`.
+No cron trigger is configured because the Worker does not have a `scheduled()` handler.
