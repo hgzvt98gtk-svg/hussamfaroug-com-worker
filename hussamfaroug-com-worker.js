@@ -3,7 +3,6 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 
 // worker.js
 var O = "https://hgzvt98gtk-svg-github-io.pages.dev";
-var A = "https://summer-water-2af4.cloudflareaccess.com";
 var C = "admin@hussamfaroug.com";
 function b64u(b) {
   return btoa(String.fromCharCode.apply(null, b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -221,13 +220,17 @@ function openid(o) {
   } });
 }
 __name(openid, "openid");
-function mcpJson(o) {
-  return new Response(JSON.stringify({
+function mcpMetadata(o) {
+  return {
     serverInfo: { name: "hussamfaroug.com", version: "1.0.0" },
     transport: { type: "http", url: o + "/.well-known/mcp" },
     capabilities: { tools: true, resources: true, prompts: false },
     tools: [{ name: "get_site_info", description: "Get information about hussamfaroug.com", inputSchema: { type: "object", properties: {} } }]
-  }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" } });
+  };
+}
+__name(mcpMetadata, "mcpMetadata");
+function mcpJson(o) {
+  return new Response(JSON.stringify(mcpMetadata(o), null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" } });
 }
 __name(mcpJson, "mcpJson");
 function ard(o) {
@@ -306,15 +309,6 @@ function agentCard(o) {
   }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
 }
 __name(agentCard, "agentCard");
-function mcpCard(o) {
-  return new Response(JSON.stringify({
-    serverInfo: { name: "hussamfaroug.com", version: "1.0.0" },
-    transport: { type: "http", url: o + "/.well-known/mcp" },
-    capabilities: { tools: true, resources: true, prompts: false },
-    tools: [{ name: "get_site_info", description: "Get information about hussamfaroug.com", inputSchema: { type: "object", properties: {} } }]
-  }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600" } });
-}
-__name(mcpCard, "mcpCard");
 function secHdrs(h, n) {
   h.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'nonce-" + n + "' https://challenges.cloudflare.com ; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests");
   h.set("Cross-Origin-Embedder-Policy", "credentialless");
@@ -352,7 +346,7 @@ async function wellKnown(req, env) {
   if (p === "health") return healthCheck();
   if (p === "agent-card.json") return agentCard(o);
   if (p === "mcp.json") return mcpJson(o);
-  if (p === "mcp/server-card.json") return mcpCard(o);
+  if (p === "mcp/server-card.json") return mcpJson(o);
   return null;
 }
 __name(wellKnown, "wellKnown");
@@ -377,7 +371,7 @@ __name(mdRu, "mdRu");
 function convertMd(html, url) {
   var t = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "";
   t = mdDec(t.trim());
-  var b = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<head[\s\S]*?<\/head>/gi, "").replace(/<nav[\s\S]*?<\/nav>/gi, "").replace(/<footer[\s\S]*?<\/footer>/gi, "").replace(/<aside[\s\S]*?<\/aside>/gi, "").replace(/<svg[\s\S]*?<\/svg>/gi, "").replace(/<!--[\s\S]*?-->/g, "");
+  var b = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<head[\s\S]*?<\/head>|<nav[\s\S]*?<\/nav>|<footer[\s\S]*?<\/footer>|<aside[\s\S]*?<\/aside>|<svg[\s\S]*?<\/svg>|<!--[\s\S]*?-->/gi, "");
   var m = b.match(/<(main|article)[^>]*>([\s\S]*?)<\/\1>/i);
   if (m) b = m[2];
   else {
@@ -386,12 +380,9 @@ function convertMd(html, url) {
   }
   var md = "";
   if (t) md += "# " + t + "\n\n";
-  for (var i = 1; i <= 6; i++) {
-    var r = new RegExp("<h" + i + "[^>]*>([\\s\\S]*?)<\\/h" + i + ">", "gi");
-    b = b.replace(r, function(_, c) {
-      return "\n\n" + "#".repeat(i) + " " + mdClean(c) + "\n\n";
-    });
-  }
+  b = b.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, function(_, level, content) {
+    return "\n\n" + "#".repeat(Number(level)) + " " + mdClean(content) + "\n\n";
+  });
   b = b.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, function(_, c) {
     return "\n\n```\n" + mdDec(c.replace(/<[^>]+>/g, "")).trim() + "\n```\n\n";
   });
