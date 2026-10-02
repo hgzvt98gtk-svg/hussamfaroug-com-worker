@@ -26,7 +26,7 @@ test("metadata responses preserve content types and cache policies", async () =>
 
 test("Markdown conversion and response token count preserve UTF-8 output", async () => {
   const html = "<html><head><title>Résumé &amp; 🙂</title></head><body><main><h1>Hello &amp; 世界</h1><p>Hi <strong>there</strong>.</p></main></body></html>";
-  const expected = "# Résumé & 🙂\n\n# Hello & 世界\n\nHi **strong**.";
+  const expected = "# Résumé & 🙂\n\n# Hello & 世界\n\nHi **there**.";
   assert.equal(worker.convertMd(html, "https://hussamfaroug.com"), expected);
 
   const originalFetch = globalThis.fetch;
@@ -45,4 +45,23 @@ test("Markdown conversion and response token count preserve UTF-8 output", async
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("Markdown conversion handles formatting, nested markup, links, and lists", () => {
+  const html = "<main><p><strong>Bold <span>text</span></strong> and <em>italic</em>, plus <b>bold</b> and <i>italic</i>.</p><ul><li><a href=\"/first\">First</a></li><li>Second</li></ul><ol><li>Third</li><li>Fourth</li></ol></main>";
+  const expected = [
+    "**Bold text** and *italic*, plus **bold** and *italic*.",
+    "- [First](https://hussamfaroug.com/first)\n- Second",
+    "1. Third\n2. Fourth"
+  ].join("\n\n");
+
+  assert.equal(worker.convertMd(html, "https://hussamfaroug.com"), expected);
+});
+
+test("Markdown conversion handles larger HTML documents", () => {
+  const paragraphCount = 5000;
+  const html = `<main>${"<p>large document</p>".repeat(paragraphCount)}</main>`;
+  const expected = Array(paragraphCount).fill("large document").join("\n\n");
+
+  assert.equal(worker.convertMd(html, "https://hussamfaroug.com"), expected);
 });

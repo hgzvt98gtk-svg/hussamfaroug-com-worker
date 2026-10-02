@@ -425,14 +425,16 @@ function convertMd(html, url) {
       return (ordered ? i2 + 1 + ". " : "- ") + mdClean(x);
     }).join("\n") + "\n\n";
   });
-  b = b.replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, function(_, c) {
-    return "**" + mdClean(c) + "**";
+  b = b.replace(/<(strong|b|em|i)\b[^>]*>([\s\S]*?)<\/\1>|<hr\b[^>]*>|<p\b[^>]*>|<\/p>|<br\s*\/?>/gi, function(match, tag, content) {
+    if (content !== void 0) {
+      var text = mdClean(content);
+      return tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*";
+    }
+    if (/^<hr/i.test(match)) return "\n\n---\n\n";
+    if (/^<p/i.test(match)) return "\n\n";
+    if (/^<\/p/i.test(match)) return "\n";
+    return "\n";
   });
-  b = b.replace(/<(em|i)[^>]*>([\s\S]*?)<\/\1>/gi, function(_, c) {
-    return "*" + mdClean(c) + "*";
-  });
-  b = b.replace(/<hr[^>]*>/gi, "\n\n---\n\n");
-  b = b.replace(/<p[^>]*>/gi, "\n\n").replace(/<\/p>/gi, "\n").replace(/<br\s*\/?>/gi, "\n");
   b = b.replace(/<[^>]+>/g, "");
   b = mdDec(b);
   b = b.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
