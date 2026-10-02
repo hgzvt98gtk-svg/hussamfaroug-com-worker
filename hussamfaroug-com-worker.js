@@ -492,17 +492,45 @@ async function handleRequest(req, env) {
       }
     });
   }
-  var h = new Headers(r.headers);
   var nonceBytes = crypto.getRandomValues(new Uint8Array(24));
   var n = b64u(nonceBytes);
+  var ws = webmcp(n);
+  var injected = false;
+  var transformed = new HTMLRewriter().on("script[src]", {
+    element(element) {
+      var src = element.getAttribute("src");
+      if (src && /\.webmcp\/bridge\.js/i.test(src)) element.remove();
+    }
+  }).on("body", {
+    element(element) {
+      element.append(ws, { html: true });
+      injected = true;
+    }
+  }).transform(r);
+  var reader = transformed.body.getReader();
+  var body = new ReadableStream({
+    async pull(controller) {
+      try {
+        var chunk = await reader.read();
+        if (chunk.done) {
+          if (!injected) controller.enqueue(encoder.encode(ws));
+          controller.close();
+          return;
+        }
+        controller.enqueue(chunk.value);
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    }
+  });
+  var h = new Headers(transformed.headers);
   h.set("Link", linkHdr(o));
   h = secHdrs(h, n);
-  var hb = await r.text();
-  hb = hb.replace(/<script[^>]*src=["'][^"']*\.webmcp\/bridge\.js[^"']*["'][^>]*><\/script>/gi, "");
-  var ws = webmcp(n);
-  var mh2 = hb.indexOf("</body>") !== -1 ? hb.replace("</body>", ws + "</body>") : hb.indexOf("</head>") !== -1 ? hb.replace("</head>", ws + "</head>") : hb + ws;
-  h.set("Content-Length", encoder.encode(mh2).length.toString());
-  return new Response(mh2, { status: r.status, headers: h });
+  h.delete("Content-Length");
+  return new Response(body, { status: r.status, headers: h });
 }
 __name(handleRequest, "handleRequest");
 export {
