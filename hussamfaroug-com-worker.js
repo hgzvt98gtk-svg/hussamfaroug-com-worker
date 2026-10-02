@@ -10,11 +10,12 @@ function b64u(b) {
   return btoa(String.fromCharCode.apply(null, b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 __name(b64u, "b64u");
-function cachedJson(data, contentType) {
+function cachedJson(data, options) {
+  options = options || {};
   return new Response(JSON.stringify(data, null, 2), { headers: {
-    "Content-Type": contentType || "application/json",
+    "Content-Type": options.contentType || "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Cache-Control": PUBLIC_CACHE_CONTROL
+    "Cache-Control": options.cacheControl || PUBLIC_CACHE_CONTROL
   } });
 }
 __name(cachedJson, "cachedJson");
@@ -257,7 +258,7 @@ function ard(o) {
       { anchor: o, href: o + "/auth.md", rel: "service-doc", type: "text/markdown", title: "Agent Auth Documentation", description: "How to register a credential for hussamfaroug.com" },
       { anchor: o, href: o + "/.well-known/health", rel: "status", type: "application/json", title: "Health Check", description: "Service health endpoint" }
     ]
-  }, "application/linkset+json");
+  }, { contentType: "application/linkset+json" });
 }
 __name(ard, "ard");
 function aiCatalog(o) {
@@ -283,11 +284,11 @@ function agentSkillsIndex(o) {
 }
 __name(agentSkillsIndex, "agentSkillsIndex");
 function healthCheck() {
-  return new Response(JSON.stringify({ status: "ok", timestamp: (new Date()).toISOString() }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
+  return cachedJson({ status: "ok", timestamp: (new Date()).toISOString() }, { cacheControl: "no-store" });
 }
 __name(healthCheck, "healthCheck");
 function agentCard(o) {
-  return new Response(JSON.stringify({
+  return cachedJson({
     schemaVersion: "1.0",
     name: "HussamFaroug Agent",
     version: "1.0.0",
@@ -321,7 +322,7 @@ function agentCard(o) {
       mcpServerCard: o + "/.well-known/mcp/server-card.json",
       authMd: o + "/auth.md"
     }
-  }, null, 2), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
+  }, { cacheControl: "no-store" });
 }
 __name(agentCard, "agentCard");
 function secHdrs(h, n) {
