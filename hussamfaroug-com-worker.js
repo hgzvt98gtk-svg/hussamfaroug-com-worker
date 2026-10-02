@@ -422,16 +422,11 @@ function convertMd(html, url) {
   b = b.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, function(_, h, c) {
     return "[" + mdClean(c) + "](" + mdRu(h, url) + ")";
   });
-  b = b.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, function(_, c) {
+  b = b.replace(/<(ul|ol)[^>]*>([\s\S]*?)<\/\1>/gi, function(_, type, c) {
     var it = c.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
-    return "\n\n" + it.map(function(x) {
-      return "- " + mdClean(x);
-    }).join("\n") + "\n\n";
-  });
-  b = b.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, function(_, c) {
-    var it = c.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+    var ordered = type.toLowerCase() === "ol";
     return "\n\n" + it.map(function(x, i2) {
-      return i2 + 1 + ". " + mdClean(x);
+      return (ordered ? i2 + 1 + ". " : "- ") + mdClean(x);
     }).join("\n") + "\n\n";
   });
   b = b.replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, function(_, c) {
