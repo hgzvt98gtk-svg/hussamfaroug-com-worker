@@ -248,10 +248,6 @@ function mcpMetadata(o) {
   };
 }
 __name(mcpMetadata, "mcpMetadata");
-function mcpJson(o) {
-  return cachedJson(mcpMetadata(o));
-}
-__name(mcpJson, "mcpJson");
 function ard(o) {
   return cachedJson({
     linkset: [
@@ -364,8 +360,7 @@ async function wellKnown(req, env) {
   if (p === "agent-skills/index.json") return agentSkillsIndex(o);
   if (p === "health") return healthCheck();
   if (p === "agent-card.json") return agentCard(o);
-  if (p === "mcp.json") return mcpJson(o);
-  if (p === "mcp/server-card.json") return mcpJson(o);
+  if (p === "mcp.json" || p === "mcp/server-card.json") return cachedJson(mcpMetadata(o));
   return null;
 }
 __name(wellKnown, "wellKnown");
