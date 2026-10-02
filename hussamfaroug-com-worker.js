@@ -18,53 +18,77 @@ function cachedJson(data, contentType) {
   } });
 }
 __name(cachedJson, "cachedJson");
-async function botAuth(req, env) {
-  var o = new URL(req.url).origin;
-  var kv = env && env.SITE_CONFIG;
-  var pubJwkStr = null, privJwkStr = null;
-  try {
-    if (kv) {
-      [pubJwkStr, privJwkStr] = await Promise.all([
-        kv.get("BOT_AUTH_PUBKEY_JWK"),
-        kv.get("BOT_AUTH_PRIVKEY_JWK")
-      ]);
-    }
-  } catch (e) {
+var botAuthKeyPromise = null;
+async function buildBotAuthKey(privJwk) {
+  if (!privJwk || privJwk.kty !== "OKP" || privJwk.crv !== "Ed25519" || typeof privJwk.x !== "string" || typeof privJwk.d !== "string") {
+    throw new Error("invalid bot auth private key");
   }
-  var ck, pubJwk;
-  if (pubJwkStr && privJwkStr) {
-    pubJwk = JSON.parse(pubJwkStr);
-    ck = await crypto.subtle.importKey("jwk", JSON.parse(privJwkStr), { name: "Ed25519" }, false, ["sign"]);
+  var ck = await crypto.subtle.importKey("jwk", privJwk, { name: "Ed25519" }, false, ["sign"]);
+  var x = privJwk.x;
+  var kid = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(JSON.stringify({ crv: "Ed25519", kty: "OKP", x })))));
+  var body = JSON.stringify({ keys: [{ kty: "OKP", crv: "Ed25519", kid, x, alg: "EdDSA" }] });
+  return { ck, kid, body };
+}
+__name(buildBotAuthKey, "buildBotAuthKey");
+async function loadBotAuthKey(kv) {
+  var t0 = Date.now();
+  var privJwkStr = null;
+  if (kv) {
+    privJwkStr = await kv.get("BOT_AUTH_PRIVKEY_JWK");
+    if (privJwkStr === null) {
+      var pubJwkStr = await kv.get("BOT_AUTH_PUBKEY_JWK");
+      if (pubJwkStr !== null) throw new Error("bot auth public key present without private key");
+    }
+  }
+  var t1 = Date.now();
+  var key;
+  if (privJwkStr !== null) {
+    key = await buildBotAuthKey(JSON.parse(privJwkStr));
   } else {
     var kp = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
-    ck = kp.privateKey;
-    pubJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
     var privJwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
-    pubJwkStr = JSON.stringify(pubJwk);
-    privJwkStr = JSON.stringify(privJwk);
-    try {
-      if (kv) {
-        await Promise.all([
-          kv.put("BOT_AUTH_PUBKEY_JWK", pubJwkStr),
-          kv.put("BOT_AUTH_PRIVKEY_JWK", privJwkStr)
-        ]);
-      }
-    } catch (e) {
+    key = await buildBotAuthKey(privJwk);
+    if (kv) {
+      var pubJwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
+      await kv.put("BOT_AUTH_PRIVKEY_JWK", JSON.stringify(privJwk));
+      await kv.put("BOT_AUTH_PUBKEY_JWK", JSON.stringify(pubJwk));
     }
   }
-  var x = pubJwk.x;
-  var th = b64u(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(JSON.stringify({ crv: "Ed25519", kty: "OKP", x })))));
-  var j = JSON.stringify({ keys: [{ kty: "OKP", crv: "Ed25519", kid: th, x, alg: "EdDSA" }] });
-  var h = new URL(req.url).host, cr = Math.floor(Date.now() / 1e3), ex = cr + 300;
-  var si = 'sig1=("@authority" "signature-agent");created=' + cr + ';keyid="' + th + '";alg="ed25519";expires=' + ex + ';tag="web-bot-auth"';
+  key.timing = "kv;dur=" + (t1 - t0) + ", crypto;dur=" + (Date.now() - t1);
+  return key;
+}
+__name(loadBotAuthKey, "loadBotAuthKey");
+async function botAuth(req, env) {
+  var u = new URL(req.url), o = u.origin, h = u.host;
+  var hit = botAuthKeyPromise !== null;
+  if (!hit) {
+    botAuthKeyPromise = loadBotAuthKey(env && env.SITE_CONFIG);
+    botAuthKeyPromise.catch(function() {
+      botAuthKeyPromise = null;
+    });
+  }
+  var key;
+  try {
+    key = await botAuthKeyPromise;
+  } catch (e) {
+    console.error("bot auth key unavailable:", e && e.message);
+    return new Response("Service Unavailable", { status: 503, headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "no-store",
+      "Retry-After": "30"
+    } });
+  }
+  var cr = Math.floor(Date.now() / 1e3), ex = cr + 300;
+  var si = 'sig1=("@authority" "signature-agent");created=' + cr + ';keyid="' + key.kid + '";alg="ed25519";expires=' + ex + ';tag="web-bot-auth"';
   var sb = '"@authority": ' + h + '\n"signature-agent": ' + o + '\n"@created": ' + cr + '\n"@expires": ' + ex;
-  var sg = btoa(String.fromCharCode.apply(null, new Uint8Array(await crypto.subtle.sign("Ed25519", ck, encoder.encode(sb)))));
-  return new Response(j, { headers: {
+  var sg = btoa(String.fromCharCode.apply(null, new Uint8Array(await crypto.subtle.sign("Ed25519", key.ck, encoder.encode(sb)))));
+  return new Response(key.body, { headers: {
     "Content-Type": "application/http-message-signatures-directory+json",
     "Access-Control-Allow-Origin": "*",
     "Signature-Agent": '"' + o + '"',
     "Signature-Input": si,
     "Signature": "sig1=:" + sg + ":",
+    "Server-Timing": hit ? "key-cache;desc=hit" : "key-cache;desc=miss, " + key.timing,
     "Cache-Control": PUBLIC_CACHE_CONTROL
   } });
 }
