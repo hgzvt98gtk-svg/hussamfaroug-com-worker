@@ -371,7 +371,8 @@ async function wellKnown(req, env) {
 __name(wellKnown, "wellKnown");
 function mdDec(s) {
   return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(m, c) {
-    return String.fromCharCode(c);
+    var codePoint = Number(c);
+    return codePoint <= 1114111 ? String.fromCodePoint(codePoint) : m;
   });
 }
 __name(mdDec, "mdDec");
