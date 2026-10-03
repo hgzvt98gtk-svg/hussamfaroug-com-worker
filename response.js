@@ -21,7 +21,30 @@ export function cachedJson(data, options = {}) {
 }
 
 export function secHdrs(headers, nonce) {
-  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'nonce-" + nonce + "' https://challenges.cloudflare.com ; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests");
+  const originCsp = headers.get("Content-Security-Policy");
+  if (originCsp) {
+    const directives = originCsp.split(";").map(directive => directive.trim()).filter(Boolean);
+    const directiveName = directive => directive.split(/\s+/, 1)[0].toLowerCase();
+    const workerSources = ["'nonce-" + nonce + "'", "https://challenges.cloudflare.com"];
+    let scriptDirectiveIndex = directives.findIndex(directive => directiveName(directive) === "script-src-elem");
+    if (scriptDirectiveIndex < 0) {
+      scriptDirectiveIndex = directives.findIndex(directive => directiveName(directive) === "script-src");
+    }
+    if (scriptDirectiveIndex >= 0) {
+      const sources = directives[scriptDirectiveIndex].split(/\s+/);
+      for (const source of workerSources) {
+        if (!sources.includes(source)) sources.push(source);
+      }
+      directives[scriptDirectiveIndex] = sources.join(" ");
+    } else {
+      const defaultDirective = directives.find(directive => directiveName(directive) === "default-src");
+      const defaultSources = defaultDirective ? defaultDirective.split(/\s+/).slice(1) : [];
+      directives.push(["script-src", ...new Set([...defaultSources, ...workerSources])].join(" "));
+    }
+    headers.set("Content-Security-Policy", directives.join("; "));
+  } else {
+    headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'nonce-" + nonce + "' https://challenges.cloudflare.com ; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests");
+  }
   headers.set("Cross-Origin-Embedder-Policy", "credentialless");
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
   headers.set("Cross-Origin-Resource-Policy", "cross-origin");
