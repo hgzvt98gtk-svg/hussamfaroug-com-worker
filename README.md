@@ -85,6 +85,9 @@ Origin requests are unconditional (no Range or conditional validator headers),
 request HTML when available, and have a 10-second timeout covering headers and
 body transfer. Client cancellation propagates to the origin. Non-HTML responses
 remain streamed. HTML responses stream through Cloudflare's HTMLRewriter.
+Only the exact `text/html` media type (trimmed, case-insensitive, before any
+parameters) is converted or rewritten. Missing/misleading Content-Type values
+and null upstream bodies remain passthrough.
 Transformed responses discard upstream byte lengths, encodings, and validators.
 The `enable_request_signal` compatibility flag enables incoming client-disconnect
 signals despite the older compatibility date.

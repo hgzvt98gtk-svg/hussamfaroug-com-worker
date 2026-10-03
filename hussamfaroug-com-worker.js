@@ -92,8 +92,8 @@ async function handleRequest(request, env, headOnly = false) {
       "Access-Control-Allow-Origin": "*"
     } });
   }
-  var contentType = upstream.headers.get("Content-Type") || "";
-  if (contentType.indexOf("text/html") === -1 || upstream.body === null) {
+  var mediaType = (upstream.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (mediaType !== "text/html" || upstream.body === null) {
     var passthroughHeaders = new Headers(upstream.headers);
     applyCachePolicy(passthroughHeaders, request, upstream);
     return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: passthroughHeaders });

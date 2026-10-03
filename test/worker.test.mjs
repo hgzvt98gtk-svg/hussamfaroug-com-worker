@@ -678,6 +678,52 @@ test("identity cache policy preserves non-HTML streaming and HEAD cancellation",
   }
 });
 
+test("HTML media type classification is exact and case-insensitive for GET and HEAD", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = "<html><head></head><body><p>Content</p></body></html>";
+  try {
+    for (const method of ["GET", "HEAD"]) {
+      for (const accept of ["text/html", "text/markdown"]) {
+        for (const [contentType, isHtml] of [
+          ["text/html", true], ["Text/HTML; charset=UTF-8", true],
+          ["  TEXT/HTML  ; charset=utf-8", true], ["text/html ; profile=\"example\"", true],
+          ["application/text/html", false], ["text/htmlish", false],
+          ["application/json; note=text/html", false], ["text/plain; text/html", false],
+          ["text/html, application/json", false], [null, false]
+        ]) {
+          for (const nullBody of [false, true]) {
+            globalThis.fetch = async () => {
+              const headers = { Vary: "Origin" };
+              if (contentType !== null) headers["Content-Type"] = contentType;
+              // A byte body avoids Response adding an implicit text/plain Content-Type.
+              return new Response(nullBody ? null : new TextEncoder().encode(html), {
+                status: nullBody ? 204 : 202, headers
+              });
+            };
+            const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+              method, headers: { Accept: accept }
+            }), testEnv);
+            const transformed = isHtml && !nullBody;
+            assert.equal(response.status, nullBody ? 204 : 202);
+            assert.equal(response.headers.get("Vary"), transformed ? "Origin, Accept" : "Origin");
+            assert.equal(response.headers.has("Link"), transformed && accept === "text/html");
+            assert.equal(response.headers.has("Content-Security-Policy"), transformed && accept === "text/html");
+            assert.equal(response.headers.get("Content-Type"),
+              transformed && accept === "text/markdown" ? "text/markdown; charset=utf-8" : contentType?.trim() ?? null);
+            const body = await response.text();
+            if (method === "HEAD" || nullBody) assert.equal(body, "");
+            else if (!transformed) assert.equal(body, html);
+            else if (accept === "text/markdown") assert.equal(body, "Content");
+            else assert.match(body, /<script nonce=/);
+          }
+        }
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Markdown handles oversized responses and body-read failures without leaking details", async () => {
   const original = globalThis.fetch;
   try {
