@@ -250,9 +250,33 @@ test("HTML response transformation injects metadata and nonce script while strea
     const html = await response.text();
     assert.equal(response.status, 201);
     assert.match(html, /<link rel="agent" href="https:\/\/hussamfaroug\.com\/\.well-known\/agent-card\.json"/);
-    assert.match(html, /<script nonce="[A-Za-z0-9_-]{32}">/);
-    assert.match(response.headers.get("Content-Security-Policy"), /script-src 'self' 'nonce-[A-Za-z0-9_-]{32}'/);
+    const nonce = html.match(/<script nonce="([A-Za-z0-9_-]{32})">/)[1];
+    const csp = response.headers.get("Content-Security-Policy");
+    assert.match(csp, new RegExp("default-src 'self'.*script-src 'self' 'nonce-" + nonce + "' https://challenges\\.cloudflare\\.com"));
     assert.match(html, /<p>Page<\/p>/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HTML response transformation preserves origin CSP and adds the injected script nonce", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    "<html><head></head><body><p>Page</p></body></html>",
+    {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' https://trusted-cdn.example.com; object-src 'none'"
+      }
+    }
+  );
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/page"), testEnv);
+    const html = await response.text();
+    const nonce = html.match(/<script nonce="([A-Za-z0-9_-]{32})">/)[1];
+    const csp = response.headers.get("Content-Security-Policy");
+    assert.match(csp, new RegExp("default-src 'self'; script-src 'self' https://trusted-cdn\\.example\\.com 'nonce-" + nonce + "' https://challenges\\.cloudflare\\.com; object-src 'none'"));
   } finally {
     globalThis.fetch = originalFetch;
   }
