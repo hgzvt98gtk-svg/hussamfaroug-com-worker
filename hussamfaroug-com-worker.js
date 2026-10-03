@@ -105,7 +105,7 @@ async function botAuth(req, env) {
   }
   var cr = Math.floor(Date.now() / 1e3), ex = cr + 300;
   var si = 'sig1=("@authority" "signature-agent");created=' + cr + ';keyid="' + key.kid + '";alg="ed25519";expires=' + ex + ';tag="web-bot-auth"';
-  var sb = '"@authority": ' + h + '\n"signature-agent": ' + o + '\n"@created": ' + cr + '\n"@expires": ' + ex;
+  var sb = '"@authority": ' + h + '\n"signature-agent": "' + o + '"\n"@signature-params": ' + si.slice(si.indexOf("=") + 1);
   var sg = btoa(String.fromCharCode.apply(null, new Uint8Array(await crypto.subtle.sign("Ed25519", key.ck, encoder.encode(sb)))));
   return new Response(key.body, { headers: {
     "Content-Type": "application/http-message-signatures-directory+json",
