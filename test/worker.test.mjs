@@ -411,6 +411,50 @@ test("HEAD responses preserve GET representation headers and omit the body", asy
   }
 });
 
+test("Markdown HEAD responses skip reading and converting the origin body", async () => {
+  const originalFetch = globalThis.fetch;
+  let pulls = 0;
+  let cancelled = false;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(controller) {
+      pulls++;
+      controller.enqueue(new TextEncoder().encode("<main><p>Page</p></main>"));
+    },
+    cancel() {
+      cancelled = true;
+    }
+  }, { highWaterMark: 0 }), {
+    status: 404,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Length": "24",
+      "Content-Encoding": "gzip",
+      ETag: "\"html\"",
+      "Cache-Control": "public, max-age=60"
+    }
+  });
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+      method: "HEAD",
+      headers: { Accept: "text/markdown", "X-API-Key": "secret" }
+    }), testEnv);
+
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get("Content-Type"), "text/markdown; charset=utf-8");
+    assert.equal(response.headers.get("Content-Length"), null);
+    assert.equal(response.headers.get("Content-Encoding"), null);
+    assert.equal(response.headers.get("ETag"), null);
+    assert.equal(response.headers.get("x-markdown-tokens"), null);
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+    assert.match(response.headers.get("Vary"), /Accept/);
+    assert.equal(await response.text(), "");
+    assert.ok(pulls <= 1);
+    assert.equal(cancelled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Markdown conversion handles larger HTML documents", async () => {
   const paragraphCount = 5000;
   const html = `<main>${"<p>large document</p>".repeat(paragraphCount)}</main>`;

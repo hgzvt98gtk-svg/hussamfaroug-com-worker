@@ -68,6 +68,8 @@ on discovery routes. It is a public, read-only proxy: incoming cookies,
 Authorization, proxy credentials, and forwarding-host headers are not sent to
 the configured origin. Paths cannot change that origin. Origin URLs must use
 HTTP(S), contain no credentials, and differ from the public Worker origin.
+HEAD requests that prefer Markdown return the Markdown headers without reading or
+converting the origin body, so they omit `x-markdown-tokens`.
 
 Origin requests are unconditional (no Range or conditional validator headers),
 request HTML when available, and have a 10-second timeout covering headers and

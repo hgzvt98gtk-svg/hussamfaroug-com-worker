@@ -10,7 +10,7 @@ var worker_default = {
   async fetch(request, env) {
     if (request.method === "HEAD") {
       var getRequest = new Request(request, { method: "GET" });
-      var response = await handleRequest(getRequest, env);
+      var response = await handleRequest(getRequest, env, true);
       if (response.body) await response.body.cancel();
       return new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers });
     }
@@ -18,7 +18,7 @@ var worker_default = {
   }
 };
 
-async function handleRequest(request, env) {
+async function handleRequest(request, env, headOnly = false) {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
       "Access-Control-Allow-Origin": "*",
@@ -86,19 +86,22 @@ async function handleRequest(request, env) {
     return new Response(upstream.body, { status: upstream.status, headers: passthroughHeaders });
   }
   if (prefersMarkdown(request.headers.get("Accept") || "")) {
-    var markdown;
-    try {
-      var html = await readHtml(upstream);
-      markdown = await convertMd(html, proxyUrl.href);
-    } catch {
-      console.error("origin conversion failed");
-      return new Response("Origin conversion unavailable", { status: 502, headers: { "Cache-Control": "no-store" } });
+    var markdown = null;
+    if (headOnly) {
+      await upstream.body.cancel().catch(() => {});
+    } else {
+      try {
+        var html = await readHtml(upstream);
+        markdown = await convertMd(html, proxyUrl.href);
+      } catch {
+        console.error("origin conversion failed");
+        return new Response("Origin conversion unavailable", { status: 502, headers: { "Cache-Control": "no-store" } });
+      }
     }
-    var tokens = Math.max(1, Math.ceil(encoder.encode(markdown).length / 4));
     var markdownHeaders = new Headers(upstream.headers);
     ["Content-Length", "Content-Encoding", "ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest", "Accept-Ranges", "Content-Range"].forEach(header => markdownHeaders.delete(header));
     markdownHeaders.set("Content-Type", "text/markdown; charset=utf-8");
-    markdownHeaders.set("x-markdown-tokens", String(tokens));
+    if (markdown !== null) markdownHeaders.set("x-markdown-tokens", String(Math.max(1, Math.ceil(encoder.encode(markdown).length / 4))));
     markdownHeaders.set("Content-Signal", "ai-train=yes, search=yes, ai-input=yes");
     if (request.headers.has("Authorization") || request.headers.has("Cookie") || hasCustomIdentity || upstream.headers.has("Set-Cookie")) {
       markdownHeaders.set("Cache-Control", "private, no-store");
