@@ -1,13 +1,7 @@
+import { b64u } from "./response.js";
+
 const encoder = new TextEncoder();
 let botAuthKeyPromise = null;
-
-function b64u(bytes) {
-  var binary = "";
-  for (var i = 0; i < bytes.length; i += 8192) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
 
 async function buildBotAuthKey(privateJwk) {
   if (!privateJwk || privateJwk.kty !== "OKP" || privateJwk.crv !== "Ed25519" || typeof privateJwk.x !== "string" || typeof privateJwk.d !== "string") {

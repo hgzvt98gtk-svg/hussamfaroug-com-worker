@@ -1,5 +1,13 @@
 export const PUBLIC_CACHE_CONTROL = "public, max-age=3600";
 
+export function b64u(bytes) {
+  var binary = "";
+  for (var i = 0; i < bytes.length; i += 8192) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 export function cachedJson(data, options = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     headers: {

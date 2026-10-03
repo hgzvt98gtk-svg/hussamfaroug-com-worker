@@ -236,6 +236,25 @@ test("HTML responses vary by Accept and filter the legacy bridge script", async 
   }
 });
 
+test("HTML response transformation injects metadata and nonce script while streaming", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    "<html><head></head><body><p>Page</p></body></html>",
+    { status: 201, headers: { "Content-Type": "text/html; charset=utf-8" } }
+  );
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/page"), testEnv);
+    const html = await response.text();
+    assert.equal(response.status, 201);
+    assert.match(html, /<link rel="agent" href="https:\/\/hussamfaroug\.com\/\.well-known\/agent-card\.json"/);
+    assert.match(html, /<script nonce="[A-Za-z0-9_-]{32}">/);
+    assert.match(response.headers.get("Content-Security-Policy"), /script-src 'self' 'nonce-[A-Za-z0-9_-]{32}'/);
+    assert.match(html, /<p>Page<\/p>/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Markdown conversion handles formatting, nested markup, links, and lists", async () => {
   const html = "<main><p><strong>Bold <span>text</span></strong> and <em>italic</em>, plus <b>bold</b> and <i>italic</i>.</p><ul><li><a href=\"/first\">First</a></li><li>Second</li></ul><ol><li>Third</li><li>Fourth</li></ol></main>";
   const expected = [

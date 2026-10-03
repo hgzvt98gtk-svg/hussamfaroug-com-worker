@@ -1,17 +1,9 @@
 import { botAuth } from "./bot-auth.js";
 import { authMd, wellKnown } from "./metadata.js";
 import { convertMd } from "./markdown.js";
-import { linkHdr, secHdrs, varyAccept, webmcp } from "./response.js";
+import { b64u, linkHdr, secHdrs, varyAccept, webmcp } from "./response.js";
 
 var encoder = new TextEncoder();
-
-function b64u(bytes) {
-  var binary = "";
-  for (var i = 0; i < bytes.length; i += 8192) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
 
 var worker_default = {
   async fetch(request, env) {
@@ -134,4 +126,4 @@ async function handleRequest(request, env) {
   return new Response(body, { status: transformed.status, headers: responseHeaders });
 }
 
-export { worker_default as default, handleRequest };
+export { worker_default as default };
