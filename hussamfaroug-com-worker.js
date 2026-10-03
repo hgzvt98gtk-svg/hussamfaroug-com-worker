@@ -366,14 +366,14 @@ async function wellKnown(req, env) {
 }
 __name(wellKnown, "wellKnown");
 function mdDec(s) {
-  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(m, c) {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(m, c) {
     var codePoint = Number(c);
     return codePoint <= 1114111 ? String.fromCodePoint(codePoint) : m;
-  });
+  }).replace(/&amp;/g, "&");
 }
 __name(mdDec, "mdDec");
 function mdClean(h) {
-  return h.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  return h.replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, "").replace(/<style[\s\S]*?<\/style\b[^>]*>/gi, "").replace(/<|>/g, "").replace(/\s+/g, " ").trim();
 }
 __name(mdClean, "mdClean");
 function mdRu(h, b) {
@@ -387,7 +387,7 @@ __name(mdRu, "mdRu");
 function convertMd(html, url) {
   var t = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "";
   t = mdDec(t.trim());
-  var b = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<head[\s\S]*?<\/head>|<nav[\s\S]*?<\/nav>|<footer[\s\S]*?<\/footer>|<aside[\s\S]*?<\/aside>|<svg[\s\S]*?<\/svg>|<!--[\s\S]*?-->/gi, "");
+  var b = html.replace(/<script[\s\S]*?<\/script\b[^>]*>|<style[\s\S]*?<\/style\b[^>]*>|<head[\s\S]*?<\/head\b[^>]*>|<nav[\s\S]*?<\/nav\b[^>]*>|<footer[\s\S]*?<\/footer\b[^>]*>|<aside[\s\S]*?<\/aside\b[^>]*>|<svg[\s\S]*?<\/svg\b[^>]*>|<!--[\s\S]*?--!?>/gi, "");
   var m = b.match(/<(main|article)[^>]*>([\s\S]*?)<\/\1>/i);
   if (m) b = m[2];
   else {
@@ -400,10 +400,10 @@ function convertMd(html, url) {
     return "\n\n" + "#".repeat(Number(level)) + " " + mdClean(content) + "\n\n";
   });
   b = b.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, function(_, c) {
-    return "\n\n```\n" + mdDec(c.replace(/<[^>]+>/g, "")).trim() + "\n```\n\n";
+    return "\n\n```\n" + mdDec(c.replace(/<|>/g, "")).trim() + "\n```\n\n";
   });
   b = b.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, function(_, c) {
-    return "`" + mdDec(c.replace(/<[^>]+>/g, "")).trim() + "`";
+    return "`" + mdDec(c.replace(/<|>/g, "")).trim() + "`";
   });
   b = b.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, function(_, c) {
     return "\n\n" + mdClean(c).split("\n").map(function(l) {
@@ -435,10 +435,10 @@ function convertMd(html, url) {
     if (/^<\/p/i.test(match)) return "\n";
     return "\n";
   });
-  b = b.replace(/<[^>]+>/g, "");
+  b = b.replace(/<|>/g, "");
   b = mdDec(b);
   b = b.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
-  return md + b;
+  return (md + b).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 __name(convertMd, "convertMd");
 var worker_default = {
