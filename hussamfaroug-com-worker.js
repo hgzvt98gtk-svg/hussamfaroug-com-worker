@@ -373,7 +373,7 @@ function mdDec(s) {
 }
 __name(mdDec, "mdDec");
 function mdClean(h) {
-  return h.replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, "").replace(/<style[\s\S]*?<\/style\b[^>]*>/gi, "").replace(/<|>/g, "").replace(/\s+/g, " ").trim();
+  return h.replace(/<|>/g, "").replace(/\s+/g, " ").trim();
 }
 __name(mdClean, "mdClean");
 function mdRu(h, b) {
@@ -387,7 +387,7 @@ __name(mdRu, "mdRu");
 function convertMd(html, url) {
   var t = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "";
   t = mdDec(t.trim());
-  var b = html.replace(/<script[\s\S]*?<\/script\b[^>]*>|<style[\s\S]*?<\/style\b[^>]*>|<head[\s\S]*?<\/head\b[^>]*>|<nav[\s\S]*?<\/nav\b[^>]*>|<footer[\s\S]*?<\/footer\b[^>]*>|<aside[\s\S]*?<\/aside\b[^>]*>|<svg[\s\S]*?<\/svg\b[^>]*>|<!--[\s\S]*?--!?>/gi, "");
+  var b = html.replace(/<head[\s\S]*?<\/head\b[^>]*>|<nav[\s\S]*?<\/nav\b[^>]*>|<footer[\s\S]*?<\/footer\b[^>]*>|<aside[\s\S]*?<\/aside\b[^>]*>|<svg[\s\S]*?<\/svg\b[^>]*>/gi, "");
   var m = b.match(/<(main|article)[^>]*>([\s\S]*?)<\/\1>/i);
   if (m) b = m[2];
   else {
