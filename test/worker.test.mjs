@@ -319,7 +319,8 @@ test("Markdown destinations use parser attributes, URL normalization and delimit
     ["/a&#40;b&#41;&#91;c&#93; space", "https://site.example/a%28b%29\\[c\\]%20space"],
     ["/query?q=&quot;quoted&quot;&amp;x=1", "https://site.example/query?q=%22quoted%22&x=1"],
     ["https://[2001:db8::1]/?a=1&amp;b=2", "https://\\[2001:db8::1\\]/?a=1&b=2"],
-    ["/back\\slash", "https://site.example/back/slash"]
+    ["/back\\slash", "https://site.example/back/slash"],
+    ["/?q=back\\slash[bracket]", "https://site.example/?q=back%5Cslash\\[bracket\\]"]
   ];
   for (const [destination, expected] of cases) {
     assert.equal(await convertMd(`<main><a data-href="javascript:bad" title="href='javascript:bad'" href="${destination}">世界 🙂</a><img src="${destination}" alt="图片"></main>`, "https://site.example/dir/page"),
