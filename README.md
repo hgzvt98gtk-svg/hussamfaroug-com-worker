@@ -96,6 +96,16 @@ arbitrary custom identity inputs; revisit it before introducing new authenticate
 origin behavior. This is conditional cache hardening, not a demonstrated exploit
 against the current static origin.
 
+Markdown link and image destinations resolve against the origin page URL and
+allow only HTTP/HTTPS (not mailto/tel or embedded data). Invalid links become
+escaped label text; invalid images become escaped alt text. Attribute decoding
+supports decimal/hex numeric references and the named amp, lt, gt, quot, apos,
+nbsp, colon, Tab, and NewLine entities. Unresolved destination entity references
+are rejected conservatively rather than passed through. Controls are rejected;
+URL delimiters and ampersands are percent-encoded. Labels are Markdown-escaped,
+and generated links are restored after the prose entity-decoding pass so it
+cannot resurrect rejected schemes or link syntax.
+
 Public discovery describes implemented resources and the browser-only
 `get_site_info` WebMCP tool. OAuth/OIDC, A2A, and HTTP MCP services are not
 implemented; their former endpoints return 404 instead of advertising support.

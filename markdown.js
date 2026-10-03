@@ -52,15 +52,39 @@ function mdClean(html) {
   return mdStripTags(html).replace(/\s+/g, " ").trim();
 }
 
+function mdAttribute(value) {
+  var entities = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", colon: ":", Tab: "\t", NewLine: "\n" };
+  return value.replace(/&(?:#(x[0-9a-f]+|\d+);?|([a-z][a-z0-9]*);)/gi, function(match, numeric, named) {
+    if (!numeric) return entities[named] ?? match;
+    var codePoint = numeric[0].toLowerCase() === "x" ? parseInt(numeric.slice(1), 16) : Number(numeric);
+    return codePoint > 0 && codePoint <= 1114111 && !(codePoint >= 55296 && codePoint <= 57343) ? String.fromCodePoint(codePoint) : "\ufffd";
+  });
+}
+
+function mdLabel(value) {
+  return mdAttribute(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().replace(/[\\`*_[\]{}()!#&]/g, "\\$&");
+}
+
 function mdRu(href, base) {
+  if (href === null || href === "") return null;
+  href = mdAttribute(href);
+  if (/[\u0000-\u001f\u007f-\u009f]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i.test(href)) return null;
   try {
-    return new URL(href, base).href;
+    var destination = new URL(href, base);
+    if (!["http:", "https:"].includes(destination.protocol)) return null;
+    return destination.href.replace(/[\\()[\]\s<>&]/g, char => encodeURIComponent(char).replace(/[()]/g, value => "%" + value.charCodeAt(0).toString(16).toUpperCase()));
   } catch {
-    return href;
+    return null;
   }
 }
 
 export async function convertMd(html, url) {
+  // Keep generated Markdown out of the later prose tag-stripping and entity-decoding passes.
+  var protectedText = [];
+  var marker = "\u0000" + crypto.randomUUID() + ":";
+  function protect(value) {
+    return marker + (protectedText.push(value) - 1) + "\u0000";
+  }
   var tagAttrs = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*";
   var title = (html.match(new RegExp("<title\\b" + tagAttrs + ">([\\s\\S]*?)<\\/title\\s*>", "i")) || [])[1] || "";
   title = mdDec(title.trim());
@@ -73,6 +97,20 @@ export async function convertMd(html, url) {
     .onDocument({
       comments(comment) {
         comment.replace(" ");
+      }
+    })
+    .on("a", {
+      element(el) {
+        var destination = mdRu(el.getAttribute("href"), url);
+        for (var [name] of Array.from(el.attributes)) el.removeAttribute(name);
+        el.setAttribute("href", destination || "");
+      }
+    })
+    .on("img", {
+      element(el) {
+        var destination = mdRu(el.getAttribute("src"), url);
+        var alt = mdLabel(el.getAttribute("alt") || "");
+        el.replace(protect(destination ? "![" + alt + "](" + destination + ")" : alt), { html: true });
       }
     })
     .transform(new Response(html)).text();
@@ -96,13 +134,9 @@ export async function convertMd(html, url) {
   body = body.replace(new RegExp("<blockquote\\b" + tagAttrs + ">([\\s\\S]*?)<\\/blockquote\\s*>", "gi"), function(_, content) {
     return "\n\n> " + mdClean(content) + "\n\n";
   });
-  body = body.replace(new RegExp("<img\\b" + tagAttrs + ">", "gi"), function(image) {
-    var alt = (image.match(/alt=["']([^"']*)["']/i) || [])[1] || "";
-    var src = (image.match(/src=["']([^"']*)["']/i) || [])[1] || "";
-    return "![" + alt + "](" + mdRu(src, url) + ")";
-  });
   body = body.replace(new RegExp("<a\\b" + tagAttrs + "\\bhref\\s*=\\s*([\"'])(.*?)\\1" + tagAttrs + ">([\\s\\S]*?)<\\/a\\s*>", "gi"), function(_, quote, href, content) {
-    return "[" + mdClean(content) + "](" + mdRu(href, url) + ")";
+    var label = mdLabel(mdClean(content).replace(new RegExp(marker + "(\\d+)\\u0000", "g"), (_, index) => protectedText[Number(index)]));
+    return protect(href ? "[" + label + "](" + href + ")" : label);
   });
   body = body.replace(new RegExp("<(ul|ol)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>", "gi"), function(_, type, content) {
     var items = content.match(new RegExp("<li\\b" + tagAttrs + ">([\\s\\S]*?)<\\/li\\s*>", "gi")) || [];
@@ -124,5 +158,6 @@ export async function convertMd(html, url) {
   body = mdStripTags(body);
   body = mdDec(body);
   body = body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
+  body = body.replace(new RegExp(marker + "(\\d+)\\u0000", "g"), (_, index) => protectedText[Number(index)]);
   return (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
