@@ -30,7 +30,7 @@ jobs:
           curl -fsS -X PATCH "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/hussamfaroug-com/script-settings" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"observability":{"enabled":true,"head_sampling_rate":1,"redact_query_string":false,"logs":{"enabled":true,"head_sampling_rate":1,"persist":true,"invocation_logs":true},"traces":{"enabled":true,"persist":true,"head_sampling_rate":1}}}'
+            -d '{"observability":{"enabled":true,"head_sampling_rate":1,"redact_query_string":true,"logs":{"enabled":true,"head_sampling_rate":1,"persist":true,"invocation_logs":true},"traces":{"enabled":true,"persist":true,"head_sampling_rate":1}}}'
         env:
           CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
