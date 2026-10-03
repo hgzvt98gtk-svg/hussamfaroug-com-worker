@@ -94,9 +94,7 @@ export async function convertMd(html, url) {
     return "`" + mdStripTags(content).trim() + "`";
   });
   body = body.replace(new RegExp("<blockquote\\b" + tagAttrs + ">([\\s\\S]*?)<\\/blockquote\\s*>", "gi"), function(_, content) {
-    return "\n\n" + mdClean(content).split("\n").map(function(line) {
-      return "> " + line;
-    }).join("\n") + "\n\n";
+    return "\n\n> " + mdClean(content) + "\n\n";
   });
   body = body.replace(new RegExp("<img\\b" + tagAttrs + ">", "gi"), function(image) {
     var alt = (image.match(/alt=["']([^"']*)["']/i) || [])[1] || "";

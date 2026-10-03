@@ -12,7 +12,7 @@ This repo deploys the `hussamfaroug-com` Cloudflare Worker via GitHub Actions on
 2. Click **Create Token**
 3. Select **Edit Cloudflare Workers** template
 4. Scope it to your account only
-5. Copy the token value
+5. Copy the token value; never commit it
 
 ### 2. Add GitHub repository secrets
 
@@ -35,6 +35,8 @@ You can also trigger a deploy manually from the **Actions** tab → **Run workfl
 - `wrangler.toml` — Wrangler configuration (Worker name, entry point, KV binding, and custom-domain route; no cron trigger)
 - `hussamfaroug-com-worker.js` — the Worker code
 - `metadata.js`, `bot-auth.js`, `markdown.js`, and `response.js` — focused Worker modules
+- `discovery.js` — shared public resource links and browser-tool definition
+- `proxy.js` — Accept negotiation, bounded HTML reads, and origin request lifecycle
 
 ## Tests
 
@@ -51,12 +53,72 @@ After your first successful workflow run, enable branch protection in GitHub:
    - Require pull request before merging
    - Dismiss stale pull request approvals when new commits are pushed
    - Do not allow bypassing the above settings
-   - Require status checks to pass before merging (select "Deploy hussamfaroug-com Worker")
+   - Require status checks to pass before merging (select the `test` job)
 4. Click **Create**
 
 This clears all 4 CASB findings from your Cloudflare Security Center.
 
 The origin used for proxied requests is configured as `ORIGIN` in `wrangler.toml`.
+Routes are top-level Wrangler settings, not entries in `[vars]`.
+
+## Public access and proxy policy
+
+The Worker accepts GET, HEAD, and OPTIONS only. Write methods return 405, including
+on discovery routes. It is a public, read-only proxy: incoming cookies,
+Authorization, proxy credentials, and forwarding-host headers are not sent to
+the configured origin. Paths cannot change that origin. Origin URLs must use
+HTTP(S), contain no credentials, and differ from the public Worker origin.
+
+Origin requests are unconditional (no Range or conditional validator headers),
+request HTML when available, and have a 10-second timeout covering headers and
+body transfer. Client cancellation propagates to the origin. Non-HTML responses
+remain streamed. HTML responses stream through Cloudflare's HTMLRewriter.
+Transformed responses discard upstream byte lengths, encodings, and validators.
+The `enable_request_signal` compatibility flag enables incoming client-disconnect
+signals despite the older compatibility date.
+
+Markdown is selected when explicitly requested with a positive Accept quality
+at least as high as HTML. Wildcard-only requests retain HTML. Conversion reads
+at most 1 MiB of decoded upstream bytes; oversized or failed reads return a
+non-cacheable 502. It preserves upstream status, cache directives, and Vary,
+adding Accept. Credential-bearing requests and Set-Cookie responses use
+`private, no-store`; absent upstream cache directives default to `no-store`.
+
+Public discovery describes implemented resources and the browser-only
+`get_site_info` WebMCP tool. OAuth/OIDC, A2A, and HTTP MCP services are not
+implemented; their former endpoints return 404 instead of advertising support.
+`/auth.md` documents public access, not credential registration.
+
+## Signing key provisioning and rotation
+
+Before using `/.well-known/http-message-signatures-directory`, provision an
+Ed25519 private JWK in the `SITE_CONFIG` KV namespace under
+`BOT_AUTH_PRIVKEY_JWK`, using a trusted administrative environment and Cloudflare's
+KV tooling or dashboard. The JWK must contain matching `kty: OKP`, `crv: Ed25519`,
+public `x`, and private `d` components. Restrict administrative access to that
+namespace; never place key material in this repository or logs.
+
+The Worker derives its public directory from that key, validates the key pair,
+and never generates or writes keys during requests. Missing or invalid keys
+return 503. `BOT_AUTH_PUBKEY_JWK` is no longer used.
+
+To rotate, replace the provisioned private JWK centrally. Each isolate reloads
+after its 60-second cache expires; concurrent requests share the reload. KV
+propagation adds additional delay. Directory responses may remain cached for
+240 seconds, and signatures expire after 300 seconds. Coordinate verifier
+refreshes and allow for those overlap periods; this is not instant revocation.
+
+## Validation and deployment
+
+Pull requests and main pushes run `npm ci` and `npm test` on Node 22.
+Deployment on main waits for the test job. No standalone lint/build scripts
+are defined. Existing large-document coverage exercises 5,000 paragraphs;
+retain the multi-pass converter until profiling justifies replacing it.
+
+Before release, validate Wrangler configuration and test staging routing,
+double-slash destination confinement, HEAD, cache headers, origin timeouts,
+and centrally provisioned signing keys. Local tests do not establish deployed
+edge normalization, KV propagation, or shared-cache behavior.
 
 ## Cron trigger
 

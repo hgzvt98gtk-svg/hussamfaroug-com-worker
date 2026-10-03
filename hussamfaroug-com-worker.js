@@ -1,7 +1,8 @@
 import { botAuth } from "./bot-auth.js";
-import { authMd, wellKnown } from "./metadata.js";
+import { authMd, isLegacyDiscoveryPath, wellKnown } from "./metadata.js";
 import { convertMd } from "./markdown.js";
-import { b64u, linkHdr, secHdrs, varyAccept, webmcp } from "./response.js";
+import { b64u, discoveryHtml, linkHdr, secHdrs, varyAccept, webmcp } from "./response.js";
+import { fetchOrigin, prefersMarkdown, readHtml } from "./proxy.js";
 
 var encoder = new TextEncoder();
 
@@ -26,9 +27,14 @@ async function handleRequest(request, env) {
       "Access-Control-Max-Age": "86400"
     } });
   }
+  if (request.method !== "GET") {
+    return new Response("Method Not Allowed", { status: 405, headers: {
+      Allow: "GET, HEAD, OPTIONS", "Cache-Control": "no-store"
+    } });
+  }
   var url = new URL(request.url);
   var origin = url.origin;
-  if (url.pathname.startsWith("/.well-known/")) {
+  if (url.pathname.startsWith("/.well-known/") || isLegacyDiscoveryPath(url.pathname)) {
     var metadataResponse = await wellKnown(request, () => botAuth(request, env));
     if (metadataResponse) return metadataResponse;
   }
@@ -38,17 +44,31 @@ async function handleRequest(request, env) {
       headers: { "Content-Type": "text/plain", "Cache-Control": "public, max-age=3600" }
     });
   }
-  var accept = request.headers.get("Accept") || "";
   var proxyOrigin = env.ORIGIN;
   if (!proxyOrigin) return new Response("Origin configuration unavailable", { status: 500, headers: { "Cache-Control": "no-store" } });
-  var proxyUrl = new URL(url.pathname + url.search, proxyOrigin);
+  var proxyUrl;
+  try {
+    proxyUrl = new URL(proxyOrigin);
+    if (!["https:", "http:"].includes(proxyUrl.protocol) || proxyUrl.username || proxyUrl.password || proxyUrl.origin === origin) throw new Error("Invalid origin");
+    var trustedOrigin = proxyUrl.origin;
+    proxyUrl.pathname = url.pathname;
+    proxyUrl.search = url.search;
+    proxyUrl.hash = "";
+    if (proxyUrl.origin !== trustedOrigin) throw new Error("Invalid destination");
+  } catch {
+    return new Response("Origin configuration unavailable", { status: 500, headers: { "Cache-Control": "no-store" } });
+  }
   var forwardedHeaders = new Headers(request.headers);
-  ["connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade"].forEach(function(header) {
+  var connectionHeaders = (forwardedHeaders.get("Connection") || "").split(",").map(header => header.trim()).filter(Boolean);
+  [...connectionHeaders, "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
+    "host", "cookie", "authorization", "proxy-authorization", "forwarded", "x-forwarded-host", "x-forwarded-proto",
+    "if-none-match", "if-modified-since", "range", "if-range"].forEach(function(header) {
     forwardedHeaders.delete(header);
   });
+  forwardedHeaders.set("Accept", "text/html, */*;q=0.8");
   var upstream;
   try {
-    upstream = await fetch(proxyUrl.href, { method: request.method, headers: forwardedHeaders, redirect: "manual" });
+    upstream = await fetchOrigin(proxyUrl.href, forwardedHeaders, request.signal);
   } catch {
     console.error("origin fetch failed");
     return new Response("Origin unavailable", { status: 502, headers: {
@@ -61,21 +81,30 @@ async function handleRequest(request, env) {
   var contentType = upstream.headers.get("Content-Type") || "";
   if (contentType.indexOf("text/html") === -1 || upstream.body === null) {
     var passthroughHeaders = new Headers(upstream.headers);
-    if (request.method === "HEAD" && contentType.indexOf("text/html") !== -1) varyAccept(passthroughHeaders);
     return new Response(upstream.body, { status: upstream.status, headers: passthroughHeaders });
   }
-  if (accept.indexOf("text/markdown") !== -1) {
-    var html = await upstream.text();
-    var markdown = await convertMd(html, proxyUrl.href);
+  if (prefersMarkdown(request.headers.get("Accept") || "")) {
+    var markdown;
+    try {
+      var html = await readHtml(upstream);
+      markdown = await convertMd(html, proxyUrl.href);
+    } catch {
+      console.error("origin conversion failed");
+      return new Response("Origin conversion unavailable", { status: 502, headers: { "Cache-Control": "no-store" } });
+    }
     var tokens = Math.max(1, Math.ceil(encoder.encode(markdown).length / 4));
-    return new Response(markdown, { headers: {
-      "Content-Type": "text/markdown; charset=utf-8",
-      "x-markdown-tokens": String(tokens),
-      "Vary": "Accept",
-      "Content-Signal": "ai-train=yes, search=yes, ai-input=yes",
-      "Cache-Control": "public, max-age=3600",
-      "Access-Control-Allow-Origin": "*"
-    } });
+    var markdownHeaders = new Headers(upstream.headers);
+    ["Content-Length", "Content-Encoding", "ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest", "Accept-Ranges", "Content-Range"].forEach(header => markdownHeaders.delete(header));
+    markdownHeaders.set("Content-Type", "text/markdown; charset=utf-8");
+    markdownHeaders.set("x-markdown-tokens", String(tokens));
+    markdownHeaders.set("Content-Signal", "ai-train=yes, search=yes, ai-input=yes");
+    if (request.headers.has("Authorization") || request.headers.has("Cookie") || upstream.headers.has("Set-Cookie")) {
+      markdownHeaders.set("Cache-Control", "private, no-store");
+    } else if (!markdownHeaders.has("Cache-Control")) {
+      markdownHeaders.set("Cache-Control", "no-store");
+    }
+    varyAccept(markdownHeaders);
+    return new Response(markdown, { status: upstream.status, statusText: upstream.statusText, headers: markdownHeaders });
   }
   var nonce = b64u(crypto.getRandomValues(new Uint8Array(24)));
   var script = webmcp(nonce);
@@ -88,10 +117,7 @@ async function handleRequest(request, env) {
     })
     .on("head", {
       element(el) {
-        el.append('<link rel="service-meta" href="' + origin + '/.well-known/mcp/server-card.json" />', { html: true });
-        el.append('<link rel="agent" href="' + origin + '/.well-known/agent-card.json" />', { html: true });
-        el.append('<link rel="service-desc" href="' + origin + '/.well-known/oauth-authorization-server" />', { html: true });
-        el.append('<link rel="service-doc" href="' + origin + '/auth.md" />', { html: true });
+        el.append(discoveryHtml(origin), { html: true });
       }
     })
     .on("body", {
@@ -100,30 +126,12 @@ async function handleRequest(request, env) {
       }
     })
     .transform(upstream);
-  var reader = transformed.body.getReader();
-  var body = new ReadableStream({
-    async pull(controller) {
-      try {
-        var chunk = await reader.read();
-        if (chunk.done) {
-          controller.close();
-          return;
-        }
-        controller.enqueue(chunk.value);
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-    cancel(reason) {
-      return reader.cancel(reason);
-    }
-  });
   var responseHeaders = new Headers(transformed.headers);
   secHdrs(responseHeaders, nonce);
   responseHeaders.set("Link", linkHdr(origin));
-  responseHeaders.delete("Content-Length");
+  ["Content-Length", "Content-Encoding", "ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest"].forEach(header => responseHeaders.delete(header));
   varyAccept(responseHeaders);
-  return new Response(body, { status: transformed.status, headers: responseHeaders });
+  return new Response(transformed.body, { status: transformed.status, headers: responseHeaders });
 }
 
 export { worker_default as default };
