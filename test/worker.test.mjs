@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { HTMLRewriter as WasmHTMLRewriter } from "html-rewriter-wasm";
+import worker from "../hussamfaroug-com-worker.js";
+import { botAuth } from "../bot-auth.js";
+import { convertMd } from "../markdown.js";
+
+const testEnv = { ORIGIN: "https://hgzvt98gtk-svg-github-io.pages.dev" };
 
 globalThis.HTMLRewriter = class {
   constructor() {
@@ -38,32 +42,24 @@ globalThis.HTMLRewriter = class {
   }
 };
 
-const source = await readFile(new URL("../hussamfaroug-com-worker.js", import.meta.url), "utf8");
-const moduleSource = source.replace(
-  "worker_default as default",
-  "worker_default as default, convertMd, botAuth"
-);
-assert.notEqual(moduleSource, source, "Worker exports should be available to tests");
-const worker = await import(`data:text/javascript;base64,${Buffer.from(moduleSource).toString("base64")}`);
-
 test("metadata responses preserve content types and cache policies", async () => {
-  assert.equal(worker.default.scheduled, undefined);
+  assert.equal(worker.scheduled, undefined);
 
-  const health = await worker.default.fetch(new Request("https://hussamfaroug.com/.well-known/health"), {});
+  const health = await worker.fetch(new Request("https://hussamfaroug.com/.well-known/health"), testEnv);
   assert.equal(health.headers.get("Cache-Control"), "no-store");
   assert.equal((await health.json()).status, "ok");
 
-  const agentCard = await worker.default.fetch(new Request("https://hussamfaroug.com/.well-known/agent-card.json"), {});
+  const agentCard = await worker.fetch(new Request("https://hussamfaroug.com/.well-known/agent-card.json"), testEnv);
   assert.equal(agentCard.headers.get("Cache-Control"), "no-store");
   assert.equal((await agentCard.json()).name, "HussamFaroug Agent");
 
-  const apiCatalog = await worker.default.fetch(new Request("https://hussamfaroug.com/.well-known/api-catalog"), {});
+  const apiCatalog = await worker.fetch(new Request("https://hussamfaroug.com/.well-known/api-catalog"), testEnv);
   assert.equal(apiCatalog.headers.get("Content-Type"), "application/linkset+json");
   assert.equal(apiCatalog.headers.get("Cache-Control"), "public, max-age=3600");
 });
 
 test("bot-auth signature uses a structured-field byte sequence", async () => {
-  const response = await worker.botAuth(
+  const response = await botAuth(
     new Request("https://hussamfaroug.com/.well-known/http-message-signatures-directory"),
     {}
   );
@@ -99,16 +95,16 @@ test("bot-auth signature uses a structured-field byte sequence", async () => {
 test("Markdown conversion and response token count preserve UTF-8 output", async () => {
   const html = "<html><head><title>Résumé &amp; 🙂</title></head><body><main><h1>Hello &amp; 世界</h1><p>Hi <strong>there</strong>.</p></main></body></html>";
   const expected = "# Résumé & 🙂\n\n# Hello & 世界\n\nHi **there**.";
-  assert.equal(await worker.convertMd(html, "https://hussamfaroug.com"), expected);
+  assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(html, {
     headers: { "Content-Type": "text/html; charset=utf-8" }
   });
   try {
-    const response = await worker.default.fetch(new Request("https://hussamfaroug.com/page", {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
       headers: { Accept: "text/markdown" }
-    }), {});
+    }), testEnv);
     assert.equal(await response.text(), expected);
     assert.equal(response.headers.get("Vary"), "Accept");
     assert.equal(
@@ -120,7 +116,7 @@ test("Markdown conversion and response token count preserve UTF-8 output", async
   }
 });
 
-test("HEAD requests use normal routes and maintenance checks without a body", async () => {
+test("HEAD requests use normal routes without a body", async () => {
   const originalFetch = globalThis.fetch;
   let fetchMethod;
   globalThis.fetch = async (_url, options) => {
@@ -128,19 +124,13 @@ test("HEAD requests use normal routes and maintenance checks without a body", as
     return new Response(null, { status: 404, headers: { "Content-Type": "text/plain" } });
   };
   try {
-    const missing = await worker.default.fetch(new Request("https://hussamfaroug.com/missing", {
+    const missing = await worker.fetch(new Request("https://hussamfaroug.com/missing", {
       method: "HEAD"
-    }), {});
+    }), testEnv);
     assert.equal(fetchMethod, "GET");
     assert.equal(missing.status, 404);
     assert.equal(await missing.text(), "");
 
-    const maintenance = await worker.default.fetch(new Request("https://hussamfaroug.com/missing", {
-      method: "HEAD"
-    }), { FLAGS: { getBooleanValue: async () => true } });
-    assert.equal(maintenance.status, 503);
-    assert.equal(maintenance.headers.get("Cache-Control"), "no-store");
-    assert.equal(await maintenance.text(), "");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -155,9 +145,9 @@ test("upstream fetch failures do not log request query parameters", async () => 
   };
   console.error = (...args) => logs.push(args.join(" "));
   try {
-    const response = await worker.default.fetch(
+    const response = await worker.fetch(
       new Request("https://hussamfaroug.com/page?access_token=sensitive-value"),
-      {}
+      testEnv
     );
     assert.equal(response.status, 502);
     assert.deepEqual(logs, ["origin fetch failed"]);
@@ -165,6 +155,55 @@ test("upstream fetch failures do not log request query parameters", async () => 
     globalThis.fetch = originalFetch;
     console.error = originalConsoleError;
   }
+});
+
+test("proxy uses configured origin, filters hop-by-hop headers, and preserves pass-through responses", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchUrl;
+  let fetchHeaders;
+  const expectedBody = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("streamed "));
+      controller.enqueue(new TextEncoder().encode("body"));
+      controller.close();
+    }
+  });
+  globalThis.fetch = async (url, options) => {
+    fetchUrl = url;
+    fetchHeaders = options.headers;
+    return new Response(expectedBody, {
+      status: 206,
+      headers: { "Content-Type": "application/octet-stream", "X-Origin": "kept" }
+    });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/a/path?q=hello", {
+      headers: {
+        "Connection": "keep-alive",
+        "Keep-Alive": "timeout=5",
+        "TE": "trailers",
+        "Trailer": "X-Checksum",
+        "Upgrade": "websocket",
+        "X-Forwarded-Test": "preserved"
+      }
+    }), testEnv);
+    assert.equal(fetchUrl, "https://hgzvt98gtk-svg-github-io.pages.dev/a/path?q=hello");
+    for (const header of ["connection", "keep-alive", "te", "trailer", "upgrade"]) {
+      assert.equal(fetchHeaders.has(header), false);
+    }
+    assert.equal(fetchHeaders.get("x-forwarded-test"), "preserved");
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get("X-Origin"), "kept");
+    assert.equal(await response.text(), "streamed body");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("proxy returns a configuration error when its origin is missing", async () => {
+  const response = await worker.fetch(new Request("https://hussamfaroug.com/page"), {});
+  assert.equal(response.status, 500);
+  assert.equal(await response.text(), "Origin configuration unavailable");
 });
 
 test("HTML responses vary by Accept and filter the legacy bridge script", async () => {
@@ -185,7 +224,7 @@ test("HTML responses vary by Accept and filter the legacy bridge script", async 
     }
   };
   try {
-    const response = await worker.default.fetch(new Request("https://hussamfaroug.com/page"), {});
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/page"), testEnv);
     assert.equal(response.headers.get("Vary"), "Origin, Accept");
     assert.ok(selectors.includes("script[src]"));
     assert.ok(response.body);
@@ -197,6 +236,25 @@ test("HTML responses vary by Accept and filter the legacy bridge script", async 
   }
 });
 
+test("HTML response transformation injects metadata and nonce script while streaming", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    "<html><head></head><body><p>Page</p></body></html>",
+    { status: 201, headers: { "Content-Type": "text/html; charset=utf-8" } }
+  );
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/page"), testEnv);
+    const html = await response.text();
+    assert.equal(response.status, 201);
+    assert.match(html, /<link rel="agent" href="https:\/\/hussamfaroug\.com\/\.well-known\/agent-card\.json"/);
+    assert.match(html, /<script nonce="[A-Za-z0-9_-]{32}">/);
+    assert.match(response.headers.get("Content-Security-Policy"), /script-src 'self' 'nonce-[A-Za-z0-9_-]{32}'/);
+    assert.match(html, /<p>Page<\/p>/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Markdown conversion handles formatting, nested markup, links, and lists", async () => {
   const html = "<main><p><strong>Bold <span>text</span></strong> and <em>italic</em>, plus <b>bold</b> and <i>italic</i>.</p><ul><li><a href=\"/first\">First</a></li><li>Second</li></ul><ol><li>Third</li><li>Fourth</li></ol></main>";
   const expected = [
@@ -205,13 +263,13 @@ test("Markdown conversion handles formatting, nested markup, links, and lists", 
     "1. Third\n2. Fourth"
   ].join("\n\n");
 
-  assert.equal(await worker.convertMd(html, "https://hussamfaroug.com"), expected);
+  assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
 });
 
 test("Markdown conversion strips tags and escapes remaining angle brackets", async () => {
   const html = "<main><p><span>Nested text</span>: 2 < 3 &amp;&amp; 4 &gt; 1.</p><!-- removed -->unfinished <script</main>";
   assert.equal(
-    await worker.convertMd(html, "https://hussamfaroug.com"),
+    await convertMd(html, "https://hussamfaroug.com"),
     "Nested text: 2 &lt; 3 && 4 &gt; 1.\nunfinished &lt;script"
   );
 });
@@ -219,15 +277,15 @@ test("Markdown conversion strips tags and escapes remaining angle brackets", asy
 test("Markdown conversion preserves comparisons, quoted attributes, and encoded entities", async () => {
   const html = `<main title="main > content"><h1 title="heading > text">Heading</h1><p title='paragraph > text'>2 < 3 > 1 and &amp;lt;</p><pre>if (left < right) return 1;</pre></main>`;
   assert.equal(
-    await worker.convertMd(html, "https://hussamfaroug.com"),
+    await convertMd(html, "https://hussamfaroug.com"),
     "# Heading\n\n2 &lt; 3 &gt; 1 and &lt;\n\n```\nif (left &lt; right) return 1;\n```"
   );
   assert.equal(
-    await worker.convertMd("<main><p><strong>&amp;lt;</strong> <code>&amp;lt;</code></p></main>", "https://hussamfaroug.com"),
+    await convertMd("<main><p><strong>&amp;lt;</strong> <code>&amp;lt;</code></p></main>", "https://hussamfaroug.com"),
     "**&lt;** `&lt;`"
   );
   assert.equal(
-    await worker.convertMd('<main><ul><li title="one > two">Item</li></ul></main>', "https://hussamfaroug.com"),
+    await convertMd('<main><ul><li title="one > two">Item</li></ul></main>', "https://hussamfaroug.com"),
     "- Item"
   );
 });
@@ -275,7 +333,7 @@ test("Markdown conversion removes unwanted nodes using HTML parsing", async (t) 
   ];
   for (const { name, html, expected = "Visible" } of cases) {
     await t.test(name, async () => {
-      assert.equal(await worker.convertMd(html, "https://hussamfaroug.com"), expected);
+      assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
     });
   }
 });
@@ -284,12 +342,12 @@ test("Markdown filtering cannot reconstruct tags across removed nodes", async ()
   for (const removed of ["<!-- hidden -->", "<script>hidden</script>", "<style>hidden</style>"]) {
     const html = `<main><p><${removed}script>literal<${removed}/script></p></main>`;
     assert.equal(
-      await worker.convertMd(html, "https://hussamfaroug.com"),
+      await convertMd(html, "https://hussamfaroug.com"),
       "&lt; script&gt;literal&lt; /script&gt;"
     );
   }
   assert.equal(
-    await worker.convertMd("<main><p>Before<!-- hidden -->after</p></main>", "https://hussamfaroug.com"),
+    await convertMd("<main><p>Before<!-- hidden -->after</p></main>", "https://hussamfaroug.com"),
     "Before after"
   );
 });
@@ -305,13 +363,13 @@ test("HEAD responses preserve GET representation headers and omit the body", asy
   };
   try {
     for (const accept of ["text/html", "text/markdown"]) {
-      const getResponse = await worker.default.fetch(new Request("https://hussamfaroug.com/page", {
+      const getResponse = await worker.fetch(new Request("https://hussamfaroug.com/page", {
         headers: { Accept: accept }
-      }), {});
-      const headResponse = await worker.default.fetch(new Request("https://hussamfaroug.com/page", {
+      }), testEnv);
+      const headResponse = await worker.fetch(new Request("https://hussamfaroug.com/page", {
         method: "HEAD",
         headers: { Accept: accept }
-      }), {});
+      }), testEnv);
 
       assert.equal(headResponse.status, getResponse.status);
       assert.equal(headResponse.headers.get("Content-Type"), getResponse.headers.get("Content-Type"));
@@ -331,5 +389,5 @@ test("Markdown conversion handles larger HTML documents", async () => {
   const html = `<main>${"<p>large document</p>".repeat(paragraphCount)}</main>`;
   const expected = Array(paragraphCount).fill("large document").join("\n\n");
 
-  assert.equal(await worker.convertMd(html, "https://hussamfaroug.com"), expected);
+  assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
 });

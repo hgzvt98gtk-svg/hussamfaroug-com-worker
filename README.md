@@ -34,6 +34,7 @@ You can also trigger a deploy manually from the **Actions** tab → **Run workfl
 - `.github/workflows/deploy.yml` — the CI/CD workflow
 - `wrangler.toml` — Wrangler configuration (Worker name, entry point, KV binding, and custom-domain route; no cron trigger)
 - `hussamfaroug-com-worker.js` — the Worker code
+- `metadata.js`, `bot-auth.js`, `markdown.js`, and `response.js` — focused Worker modules
 
 ## Tests
 
@@ -55,9 +56,7 @@ After your first successful workflow run, enable branch protection in GitHub:
 
 This clears all 4 CASB findings from your Cloudflare Security Center.
 
-## ⚠️ FLAGS binding
-
-The Worker code references `env.FLAGS.getBooleanValue("maintenance-mode", false)`. This binding is **not** in `wrangler.toml` because it's not configured in the dashboard. The code has a try/catch around it, so if the binding is missing, the Worker still works — maintenance mode just won't function.
+The origin used for proxied requests is configured as `ORIGIN` in `wrangler.toml`.
 
 ## Cron trigger
 
