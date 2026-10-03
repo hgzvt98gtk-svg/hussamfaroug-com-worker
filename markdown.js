@@ -93,7 +93,10 @@ function mdRu(href, base) {
   try {
     var destination = new URL(href, base);
     if (!["http:", "https:"].includes(destination.protocol)) return null;
-    return destination.href.replace(/[\\()\s<>]/g, char => encodeURIComponent(char).replace(/[()]/g, value => "%" + value.charCodeAt(0).toString(16).toUpperCase())).replace(/[[\]]/g, "\\$&");
+    return destination.href.replace(/[\\()[\]\s<>]/g, function(char) {
+      if (char === "[" || char === "]") return "\\" + char;
+      return encodeURIComponent(char).replace(/[()]/g, value => "%" + value.charCodeAt(0).toString(16).toUpperCase());
+    });
   } catch {
     return null;
   }
