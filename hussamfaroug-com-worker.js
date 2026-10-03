@@ -6,6 +6,18 @@ import { fetchOrigin, prefersMarkdown, readHtml } from "./proxy.js";
 
 var encoder = new TextEncoder();
 
+function applyCachePolicy(headers, request, upstream, markdown = false) {
+  var identityHeaders = ["authorization", "cookie", "x-api-key", "x-auth-token", "x-access-token", "bearer", "x-custom-auth"];
+  if (identityHeaders.some(header => request.headers.has(header)) || upstream.headers.has("Set-Cookie")) {
+    headers.set("Cache-Control", "private, no-store");
+    for (var header of ["CDN-Cache-Control", "Cloudflare-CDN-Cache-Control", "Surrogate-Control"]) {
+      if (headers.has(header)) headers.set(header, "private, no-store");
+    }
+  } else if (markdown && !headers.has("Cache-Control")) {
+    headers.set("Cache-Control", "no-store");
+  }
+}
+
 var worker_default = {
   async fetch(request, env) {
     if (request.method === "HEAD") {
@@ -65,8 +77,6 @@ async function handleRequest(request, env, headOnly = false) {
     "if-none-match", "if-modified-since", "range", "if-range"].forEach(function(header) {
     forwardedHeaders.delete(header);
   });
-  var identityHeaders = ["x-api-key", "x-auth-token", "x-access-token", "bearer", "x-custom-auth"];
-  var hasCustomIdentity = identityHeaders.some(header => request.headers.has(header));
   forwardedHeaders.set("Accept", "text/html, */*;q=0.8");
   var upstream;
   try {
@@ -83,7 +93,8 @@ async function handleRequest(request, env, headOnly = false) {
   var contentType = upstream.headers.get("Content-Type") || "";
   if (contentType.indexOf("text/html") === -1 || upstream.body === null) {
     var passthroughHeaders = new Headers(upstream.headers);
-    return new Response(upstream.body, { status: upstream.status, headers: passthroughHeaders });
+    applyCachePolicy(passthroughHeaders, request, upstream);
+    return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: passthroughHeaders });
   }
   if (prefersMarkdown(request.headers.get("Accept") || "")) {
     var markdown = null;
@@ -103,11 +114,7 @@ async function handleRequest(request, env, headOnly = false) {
     markdownHeaders.set("Content-Type", "text/markdown; charset=utf-8");
     if (markdown !== null) markdownHeaders.set("x-markdown-tokens", String(Math.max(1, Math.ceil(encoder.encode(markdown).length / 4))));
     markdownHeaders.set("Content-Signal", "ai-train=yes, search=yes, ai-input=yes");
-    if (request.headers.has("Authorization") || request.headers.has("Cookie") || hasCustomIdentity || upstream.headers.has("Set-Cookie")) {
-      markdownHeaders.set("Cache-Control", "private, no-store");
-    } else if (!markdownHeaders.has("Cache-Control")) {
-      markdownHeaders.set("Cache-Control", "no-store");
-    }
+    applyCachePolicy(markdownHeaders, request, upstream, true);
     varyAccept(markdownHeaders);
     return new Response(markdown, { status: upstream.status, statusText: upstream.statusText, headers: markdownHeaders });
   }
@@ -132,6 +139,7 @@ async function handleRequest(request, env, headOnly = false) {
     })
     .transform(upstream);
   var responseHeaders = new Headers(transformed.headers);
+  applyCachePolicy(responseHeaders, request, upstream);
   secHdrs(responseHeaders, nonce);
   responseHeaders.set("Link", linkHdr(origin));
   ["Content-Length", "Content-Encoding", "ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest"].forEach(header => responseHeaders.delete(header));

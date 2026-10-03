@@ -83,8 +83,18 @@ Markdown is selected when explicitly requested with a positive Accept quality
 at least as high as HTML. Wildcard-only requests retain HTML. Conversion reads
 at most 1 MiB of decoded upstream bytes; oversized or failed reads return a
 non-cacheable 502. It preserves upstream status, cache directives, and Vary,
-adding Accept. Credential-bearing requests and Set-Cookie responses use
-`private, no-store`; absent upstream cache directives default to `no-store`.
+adding Accept. Markdown defaults to `no-store` when upstream Cache-Control is absent.
+
+All proxied representations (including HEAD and null-body responses) use
+`private, no-store` for incoming Authorization, Cookie, X-API-Key, X-Auth-Token,
+X-Access-Token, Bearer, or X-Custom-Auth headers, or upstream Set-Cookie.
+Detection uses the original request even when a header is stripped before
+forwarding. Copied CDN-Cache-Control, Cloudflare-CDN-Cache-Control, and
+Surrogate-Control are also overridden when present. Anonymous upstream policies
+and static public metadata remain unchanged. This enumerated list does not detect
+arbitrary custom identity inputs; revisit it before introducing new authenticated
+origin behavior. This is conditional cache hardening, not a demonstrated exploit
+against the current static origin.
 
 Public discovery describes implemented resources and the browser-only
 `get_site_info` WebMCP tool. OAuth/OIDC, A2A, and HTTP MCP services are not
