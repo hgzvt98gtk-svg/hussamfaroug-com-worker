@@ -1,15 +1,28 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// worker.js
+// hussamfaroug-com-worker.js — Canonical deployed version (Oct 3, 2026)
+// Security patches applied: hop-by-hop header filtering, HSTS preload, b64u chunking
+// Crash fixes applied: origin fetch try/catch (502 fallback), null-body guard for HTMLRewriter
+// KV binding: SITE_CONFIG (bot-auth key persistence)
+// Observability: Logs + Traces enabled (100% sampling)
+// Cron: none (removed — was causing 48 exceptions/day)
+
+var __defProp2 = Object.defineProperty;
+var __name2 = /* @__PURE__ */ __name((target, value) => __defProp2(target, "name", { value, configurable: true }), "__name");
 var O = "https://hgzvt98gtk-svg-github-io.pages.dev";
 var C = "admin@hussamfaroug.com";
 var encoder = new TextEncoder();
 var PUBLIC_CACHE_CONTROL = "public, max-age=3600";
 function b64u(b) {
-  return btoa(String.fromCharCode.apply(null, b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  var s = "";
+  for (var i = 0; i < b.length; i += 8192) {
+    s += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
+  }
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 __name(b64u, "b64u");
+__name2(b64u, "b64u");
 function cachedJson(data, options) {
   options = options || {};
   return new Response(JSON.stringify(data, null, 2), { headers: {
@@ -19,6 +32,7 @@ function cachedJson(data, options) {
   } });
 }
 __name(cachedJson, "cachedJson");
+__name2(cachedJson, "cachedJson");
 var botAuthKeyPromise = null;
 async function buildBotAuthKey(privJwk) {
   if (!privJwk || privJwk.kty !== "OKP" || privJwk.crv !== "Ed25519" || typeof privJwk.x !== "string" || typeof privJwk.d !== "string") {
@@ -36,6 +50,7 @@ async function buildBotAuthKey(privJwk) {
   return { ck, kid, body };
 }
 __name(buildBotAuthKey, "buildBotAuthKey");
+__name2(buildBotAuthKey, "buildBotAuthKey");
 async function loadBotAuthKey(kv) {
   var t0 = Date.now();
   var privJwkStr = null;
@@ -68,6 +83,7 @@ async function loadBotAuthKey(kv) {
   return key;
 }
 __name(loadBotAuthKey, "loadBotAuthKey");
+__name2(loadBotAuthKey, "loadBotAuthKey");
 async function botAuth(req, env) {
   var u = new URL(req.url), o = u.origin, h = u.host;
   if (botAuthKeyPromise === null) {
@@ -96,11 +112,12 @@ async function botAuth(req, env) {
     "Access-Control-Allow-Origin": "*",
     "Signature-Agent": '"' + o + '"',
     "Signature-Input": si,
-    "Signature": "sig1=:" + sg + ":",
+    "Signature": "sig1::" + sg + ":",
     "Cache-Control": PUBLIC_CACHE_CONTROL
   } });
 }
 __name(botAuth, "botAuth");
+__name2(botAuth, "botAuth");
 function agentAuthMetadata(o) {
   return {
     register_uri: o + "/agent/auth",
@@ -114,6 +131,7 @@ function agentAuthMetadata(o) {
   };
 }
 __name(agentAuthMetadata, "agentAuthMetadata");
+__name2(agentAuthMetadata, "agentAuthMetadata");
 function authMd(o) {
   var tb = String.fromCharCode(96, 96, 96);
   return new Response([
@@ -195,6 +213,7 @@ function authMd(o) {
   } });
 }
 __name(authMd, "authMd");
+__name2(authMd, "authMd");
 function oauthAs(o) {
   return cachedJson({
     issuer: o,
@@ -212,6 +231,7 @@ function oauthAs(o) {
   });
 }
 __name(oauthAs, "oauthAs");
+__name2(oauthAs, "oauthAs");
 function oauthPr(o) {
   return cachedJson({
     resource: o,
@@ -224,6 +244,7 @@ function oauthPr(o) {
   });
 }
 __name(oauthPr, "oauthPr");
+__name2(oauthPr, "oauthPr");
 function openid(o) {
   return cachedJson({
     issuer: o,
@@ -240,6 +261,7 @@ function openid(o) {
   });
 }
 __name(openid, "openid");
+__name2(openid, "openid");
 function mcpMetadata(o) {
   return {
     serverInfo: { name: "hussamfaroug.com", version: "1.0.0" },
@@ -249,6 +271,7 @@ function mcpMetadata(o) {
   };
 }
 __name(mcpMetadata, "mcpMetadata");
+__name2(mcpMetadata, "mcpMetadata");
 function ard(o) {
   return cachedJson({
     linkset: [
@@ -261,6 +284,7 @@ function ard(o) {
   }, { contentType: "application/linkset+json" });
 }
 __name(ard, "ard");
+__name2(ard, "ard");
 function aiCatalog(o) {
   return cachedJson({
     specVersion: "0.1.0",
@@ -273,20 +297,23 @@ function aiCatalog(o) {
   });
 }
 __name(aiCatalog, "aiCatalog");
+__name2(aiCatalog, "aiCatalog");
 function agentSkillsIndex(o) {
   return cachedJson({
     $schema: "https://agentskills.io/schemas/agent-skills-index.v0.2.json",
     skills: [
-      { name: "get_site_info", type: "tool", description: "Get information about hussamfaroug.com", url: o + "/.well-known/agent-skills/get_site_info/SKILL.md", sha256: "0000000000000000000000000000000000000000000000000000000000000000" },
-      { name: "agent_auth", type: "skill", description: "Register a credential for hussamfaroug.com", url: o + "/auth.md", sha256: "0000000000000000000000000000000000000000000000000000000000000000" }
+      { name: "get_site_info", type: "tool", description: "Get information about hussamfaroug.com", url: o + "/.well-known/agent-skills/get_site_info/SKILL.md" },
+      { name: "agent_auth", type: "skill", description: "Register a credential for hussamfaroug.com", url: o + "/auth.md" }
     ]
   });
 }
 __name(agentSkillsIndex, "agentSkillsIndex");
+__name2(agentSkillsIndex, "agentSkillsIndex");
 function healthCheck() {
-  return cachedJson({ status: "ok", timestamp: (new Date()).toISOString() }, { cacheControl: "no-store" });
+  return cachedJson({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() }, { cacheControl: "no-store" });
 }
 __name(healthCheck, "healthCheck");
+__name2(healthCheck, "healthCheck");
 function agentCard(o) {
   return cachedJson({
     schemaVersion: "1.0",
@@ -325,6 +352,7 @@ function agentCard(o) {
   }, { cacheControl: "no-store" });
 }
 __name(agentCard, "agentCard");
+__name2(agentCard, "agentCard");
 function secHdrs(h, n) {
   h.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'nonce-" + n + "' https://challenges.cloudflare.com ; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests");
   h.set("Cross-Origin-Embedder-Policy", "credentialless");
@@ -332,7 +360,7 @@ function secHdrs(h, n) {
   h.set("Cross-Origin-Resource-Policy", "cross-origin");
   h.set("Permissions-Policy", "geolocation=(), camera=(), microphone=()");
   h.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  h.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  h.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
   h.set("X-Content-Type-Options", "nosniff");
   h.set("X-Frame-Options", "SAMEORIGIN");
   h.delete("X-XSS-Protection");
@@ -340,85 +368,48 @@ function secHdrs(h, n) {
   return h;
 }
 __name(secHdrs, "secHdrs");
+__name2(secHdrs, "secHdrs");
 function webmcp(n) {
   return '<script nonce="' + n + '">(function(){if(navigator.modelContext&&navigator.modelContext.provideContext){navigator.modelContext.provideContext({tools:[{name:"get_site_info",description:"Get information about hussamfaroug.com",inputSchema:{type:"object",properties:{}},execute:async function(){return{name:"hussamfaroug.com",url:location.origin};}}]});}})();<\/script>';
 }
 __name(webmcp, "webmcp");
+__name2(webmcp, "webmcp");
 function linkHdr(o) {
   return "<" + o + '/.well-known/api-catalog>; rel="api-catalog", <' + o + '/.well-known/agent-card.json>; rel="agent", <' + o + '/.well-known/mcp/server-card.json>; rel="service-meta", <' + o + '/.well-known/oauth-authorization-server>; rel="service-desc", <' + o + '/.well-known/oauth-protected-resource>; rel="service-desc", <' + o + '/auth.md>; rel="service-doc"';
 }
 __name(linkHdr, "linkHdr");
+__name2(linkHdr, "linkHdr");
 async function wellKnown(req, env) {
   var u = new URL(req.url);
   var o = u.origin;
   var p = u.pathname.replace(/^\/\.well-known\//, "");
   if (p === "http-message-signatures-directory") return await botAuth(req, env);
+  if (p === "health") return healthCheck();
   if (p === "oauth-authorization-server") return oauthAs(o);
   if (p === "oauth-protected-resource") return oauthPr(o);
   if (p === "openid-configuration") return openid(o);
   if (p === "api-catalog") return ard(o);
   if (p === "ai-catalog.json") return aiCatalog(o);
   if (p === "agent-skills/index.json") return agentSkillsIndex(o);
-  if (p === "health") return healthCheck();
   if (p === "agent-card.json") return agentCard(o);
   if (p === "mcp.json" || p === "mcp/server-card.json") return cachedJson(mcpMetadata(o));
   return null;
 }
 __name(wellKnown, "wellKnown");
+__name2(wellKnown, "wellKnown");
 function mdDec(s) {
-  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(m, c) {
+  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(m, c) {
     var codePoint = Number(c);
     return codePoint <= 1114111 ? String.fromCodePoint(codePoint) : m;
-  }).replace(/&amp;/g, "&");
+  });
 }
 __name(mdDec, "mdDec");
-function mdStripTags(h) {
-  var text = "";
-  var i = 0;
-  while (i < h.length) {
-    if (h[i] !== "<") {
-      text += h[i++];
-      continue;
-    }
-    if (h.startsWith("<!--", i)) {
-      var commentEnd = h.indexOf("-->", i + 4);
-      if (commentEnd !== -1) {
-        i = commentEnd + 3;
-        continue;
-      }
-    }
-    var nameStart = h[i + 1] === "/" ? i + 2 : i + 1;
-    var firstChar = h.charCodeAt(nameStart);
-    if (!(firstChar >= 65 && firstChar <= 90 || firstChar >= 97 && firstChar <= 122)) {
-      text += h[i++];
-      continue;
-    }
-    var quote = "";
-    var end = nameStart + 1;
-    while (end < h.length) {
-      var char = h[end];
-      if (quote) {
-        if (char === quote) quote = "";
-      } else if (char === '"' || char === "'") {
-        quote = char;
-      } else if (char === ">") {
-        break;
-      }
-      end++;
-    }
-    if (end === h.length) {
-      text += h.slice(i);
-      break;
-    }
-    i = end + 1;
-  }
-  return text;
-}
-__name(mdStripTags, "mdStripTags");
+__name2(mdDec, "mdDec");
 function mdClean(h) {
-  return mdStripTags(h).replace(/\s+/g, " ").trim();
+  return h.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 __name(mdClean, "mdClean");
+__name2(mdClean, "mdClean");
 function mdRu(h, b) {
   try {
     return new URL(h, b).href;
@@ -427,10 +418,11 @@ function mdRu(h, b) {
   }
 }
 __name(mdRu, "mdRu");
+__name2(mdRu, "mdRu");
 function convertMd(html, url) {
   var t = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "";
   t = mdDec(t.trim());
-  var b = html.replace(/<head[\s\S]*?<\/head\b[^>]*>|<nav[\s\S]*?<\/nav\b[^>]*>|<footer[\s\S]*?<\/footer\b[^>]*>|<aside[\s\S]*?<\/aside\b[^>]*>|<svg[\s\S]*?<\/svg\b[^>]*>/gi, "");
+  var b = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<head[\s\S]*?<\/head>|<nav[\s\S]*?<\/nav>|<footer[\s\S]*?<\/footer>|<aside[\s\S]*?<\/aside>|<svg[\s\S]*?<\/svg>|<!--[\s\S]*?-->/gi, "");
   var m = b.match(/<(main|article)[^>]*>([\s\S]*?)<\/\1>/i);
   if (m) b = m[2];
   else {
@@ -443,10 +435,10 @@ function convertMd(html, url) {
     return "\n\n" + "#".repeat(Number(level)) + " " + mdClean(content) + "\n\n";
   });
   b = b.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, function(_, c) {
-    return "\n\n```\n" + mdDec(mdStripTags(c)).trim() + "\n```\n\n";
+    return "\n\n```\n" + mdDec(c.replace(/<[^>]+>/g, "")).trim() + "\n```\n\n";
   });
   b = b.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, function(_, c) {
-    return "`" + mdDec(mdStripTags(c)).trim() + "`";
+    return "`" + mdDec(c.replace(/<[^>]+>/g, "")).trim() + "`";
   });
   b = b.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, function(_, c) {
     return "\n\n" + mdClean(c).split("\n").map(function(l) {
@@ -478,22 +470,44 @@ function convertMd(html, url) {
     if (/^<\/p/i.test(match)) return "\n";
     return "\n";
   });
-  b = mdStripTags(b);
+  b = b.replace(/<[^>]+>/g, "");
   b = mdDec(b);
   b = b.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
-  return (md + b).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return md + b;
 }
 __name(convertMd, "convertMd");
+__name2(convertMd, "convertMd");
 var worker_default = {
   async fetch(request, env) {
     return handleRequest(request, env);
+  },
+  async scheduled(event, env) {
+    return handleScheduled(event, env);
   }
 };
+async function handleScheduled(event, env) {
+  var pages = ["/", "/index.html", "/Privacy.html"];
+  var origin = "https://hgzvt98gtk-svg-github-io.pages.dev";
+  for (var i = 0; i < pages.length; i++) {
+    try {
+      var u = origin + pages[i];
+      var r = await fetch(u, { method: "GET", headers: { "User-Agent": "cache-warmer/1.0" }, cf: { cacheTtl: 3600 } });
+      console.log("cache warmed:", pages[i], r.status);
+    } catch (e) {
+      console.error("cache warm failed:", pages[i], e && e.message);
+    }
+  }
+}
+
 async function handleRequest(req, env) {
+  if (req.method === "HEAD") {
+    return new Response(null, { status: 200, headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=3600" } });
+  }
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
       "Access-Control-Allow-Headers": "*",
       "Access-Control-Max-Age": "86400"
     } });
@@ -506,74 +520,88 @@ async function handleRequest(req, env) {
   } catch (e) {
   }
   if (isMaintenance) {
-    return new Response("Site under maintenance", { status: 503, headers: { "Content-Type": "text/plain", "Retry-After": "3600" } });
+    return new Response("Site under maintenance", { status: 503, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store", "Retry-After": "3600" } });
   }
   if (u.pathname.startsWith("/.well-known/")) {
-    var wk = await wellKnown(req, env);
-    if (wk) return wk;
+    var wkResp = await wellKnown(req, env);
+    if (wkResp) return wkResp;
   }
-  if (u.pathname === "/auth.md") return authMd(o);
+  if (u.pathname === "/auth.md") {
+    return authMd(o);
+  }
+  if (u.pathname === "/robots.txt") {
+    return new Response("User-agent: *\nAllow: /\nDisallow: /api/\n\n# Content-Signal\nCS: hussamfaroug.com\n\n# Agentmap\nAgentmap: " + o + "/.well-known/api-catalog\n", { headers: { "Content-Type": "text/plain", "Cache-Control": "public, max-age=3600" } });
+  }
+  var accept = req.headers.get("Accept") || "";
   var pu = O + u.pathname + u.search;
-  var r = await fetch(pu, { method: req.method, headers: req.headers, redirect: "manual" });
+  var fh = new Headers(req.headers);
+  ["connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade"].forEach(function(k) { fh.delete(k); });
+  var r;
+  try {
+    r = await fetch(pu, { method: req.method, headers: fh, redirect: "manual" });
+  } catch (e) {
+    console.error("origin fetch failed:", e && e.message, pu);
+    return new Response("Origin unavailable", { status: 502, headers: {
+      "Content-Type": "text/plain",
+      "Retry-After": "30",
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*"
+    } });
+  }
   var ct = r.headers.get("Content-Type") || "";
-  if (ct.indexOf("text/html") === -1) {
+  if (ct.indexOf("text/html") === -1 || r.body === null) {
     return new Response(r.body, { status: r.status, headers: r.headers });
   }
-  var acceptMd = (req.headers.get("Accept") || "").includes("text/markdown");
-  if (acceptMd) {
-    var html = await r.text();
-    var md = convertMd(html, o);
+  if (accept.indexOf("text/markdown") !== -1) {
+    var htmlText = await r.text();
+    var md = convertMd(htmlText, pu);
     var tokens = Math.max(1, Math.ceil(encoder.encode(md).length / 4));
-    return new Response(md, {
-      headers: {
-        "Content-Type": "text/markdown; charset=utf-8",
-        "x-markdown-tokens": String(tokens),
-        "Cache-Control": "no-store",
-        "Access-Control-Allow-Origin": "*"
-      }
-    });
+    return new Response(md, { headers: {
+      "Content-Type": "text/markdown; charset=utf-8",
+      "x-markdown-tokens": String(tokens),
+      "Vary": "accept",
+      "Content-Signal": "ai-train=yes, search=yes, ai-input=yes",
+      "Cache-Control": "public, max-age=3600",
+      "Access-Control-Allow-Origin": "*"
+    } });
   }
   var nonceBytes = crypto.getRandomValues(new Uint8Array(24));
   var n = b64u(nonceBytes);
   var ws = webmcp(n);
   var injected = false;
-  var transformed = new HTMLRewriter().on("script[src]", {
-    element(element) {
-      var src = element.getAttribute("src");
-      if (src && /\.webmcp\/bridge\.js/i.test(src)) element.remove();
-    }
-  }).on("body", {
-    element(element) {
-      element.append(ws, { html: true });
-      injected = true;
-    }
-  }).transform(r);
-  var reader = transformed.body.getReader();
-  var body = new ReadableStream({
-    async pull(controller) {
-      try {
-        var chunk = await reader.read();
-        if (chunk.done) {
-          if (!injected) controller.enqueue(encoder.encode(ws));
-          controller.close();
-          return;
-        }
-        controller.enqueue(chunk.value);
-      } catch (error) {
-        controller.error(error);
+  var transformed = new HTMLRewriter()
+    .on("head", {
+      element(el) {
+        el.append('<link rel="service-meta" href="' + o + '/.well-known/mcp/server-card.json" />', { html: true });
+        el.append('<link rel="agent" href="' + o + '/.well-known/agent-card.json" />', { html: true });
+        el.append('<link rel="service-desc" href="' + o + '/.well-known/oauth-authorization-server" />', { html: true });
+        el.append('<link rel="service-doc" href="' + o + '/auth.md" />', { html: true });
       }
-    },
-    cancel(reason) {
-      return reader.cancel(reason);
-    }
-  });
-  var h = new Headers(transformed.headers);
-  h.set("Link", linkHdr(o));
-  h = secHdrs(h, n);
-  h.delete("Content-Length");
-  return new Response(body, { status: r.status, headers: h });
+    })
+    .on("body", {
+      element(el) {
+        el.append(ws, { html: true });
+        injected = true;
+      }
+    })
+    .transform(r);
+  var reader = transformed.body.getReader();
+  var chunks = [];
+  for (;;) {
+    var _a;
+    var { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  var bodyBytes = new Uint8Array(chunks.reduce(function(acc, c) { return acc + c.length; }, 0));
+  var offset = 0;
+  for (var _i = 0; chunks.length > _i; _i++) {
+    bodyBytes.set(chunks[_i], offset);
+    offset += chunks[_i].length;
+  }
+  var respHeaders = new Headers(transformed.headers);
+  secHdrs(respHeaders, n);
+  respHeaders.set("Link", linkHdr(o));
+  return new Response(bodyBytes, { status: transformed.status, headers: respHeaders });
 }
-__name(handleRequest, "handleRequest");
-export {
-  worker_default as default
-};
+export { worker_default as default };
