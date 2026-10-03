@@ -373,7 +373,46 @@ function mdDec(s) {
 }
 __name(mdDec, "mdDec");
 function mdStripTags(h) {
-  return h.replace(/<\/?[a-z][a-z0-9:-]*(?:\s[^<>]*?)?\/?>/gi, "");
+  var text = "";
+  var i = 0;
+  while (i < h.length) {
+    if (h[i] !== "<") {
+      text += h[i++];
+      continue;
+    }
+    if (h.startsWith("<!--", i)) {
+      var commentEnd = h.indexOf("-->", i + 4);
+      if (commentEnd !== -1) {
+        i = commentEnd + 3;
+        continue;
+      }
+    }
+    var nameStart = h[i + 1] === "/" ? i + 2 : i + 1;
+    var firstChar = h.charCodeAt(nameStart);
+    if (!(firstChar >= 65 && firstChar <= 90 || firstChar >= 97 && firstChar <= 122)) {
+      text += h[i++];
+      continue;
+    }
+    var quote = "";
+    var end = nameStart + 1;
+    while (end < h.length) {
+      var char = h[end];
+      if (quote) {
+        if (char === quote) quote = "";
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === ">") {
+        break;
+      }
+      end++;
+    }
+    if (end === h.length) {
+      text += h.slice(i);
+      break;
+    }
+    i = end + 1;
+  }
+  return text;
 }
 __name(mdStripTags, "mdStripTags");
 function mdClean(h) {

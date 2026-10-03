@@ -59,10 +59,10 @@ test("Markdown conversion handles formatting, nested markup, links, and lists", 
 });
 
 test("Markdown conversion strips tags and escapes remaining angle brackets", () => {
-  const html = "<main><p><span>Nested text</span>: 2 < 3 &amp;&amp; 4 &gt; 1.</p></main>";
+  const html = "<main><p><span>Nested text</span>: 2 < 3 &amp;&amp; 4 &gt; 1.</p><!-- removed -->unfinished <script</main>";
   assert.equal(
     worker.convertMd(html, "https://hussamfaroug.com"),
-    "Nested text: 2 &lt; 3 && 4 &gt; 1."
+    "Nested text: 2 &lt; 3 && 4 &gt; 1.\nunfinished &lt;script"
   );
 });
 
