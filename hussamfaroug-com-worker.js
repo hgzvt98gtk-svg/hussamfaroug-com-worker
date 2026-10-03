@@ -65,6 +65,8 @@ async function handleRequest(request, env) {
     "if-none-match", "if-modified-since", "range", "if-range"].forEach(function(header) {
     forwardedHeaders.delete(header);
   });
+  var identityHeaders = ["x-api-key", "x-auth-token", "x-access-token", "bearer", "x-custom-auth"];
+  var hasCustomIdentity = identityHeaders.some(header => request.headers.has(header));
   forwardedHeaders.set("Accept", "text/html, */*;q=0.8");
   var upstream;
   try {
@@ -98,7 +100,7 @@ async function handleRequest(request, env) {
     markdownHeaders.set("Content-Type", "text/markdown; charset=utf-8");
     markdownHeaders.set("x-markdown-tokens", String(tokens));
     markdownHeaders.set("Content-Signal", "ai-train=yes, search=yes, ai-input=yes");
-    if (request.headers.has("Authorization") || request.headers.has("Cookie") || upstream.headers.has("Set-Cookie")) {
+    if (request.headers.has("Authorization") || request.headers.has("Cookie") || hasCustomIdentity || upstream.headers.has("Set-Cookie")) {
       markdownHeaders.set("Cache-Control", "private, no-store");
     } else if (!markdownHeaders.has("Cache-Control")) {
       markdownHeaders.set("Cache-Control", "no-store");
