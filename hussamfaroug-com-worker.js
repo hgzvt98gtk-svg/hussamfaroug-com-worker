@@ -409,15 +409,59 @@ async function wellKnown(req, env) {
 __name(wellKnown, "wellKnown");
 __name2(wellKnown, "wellKnown");
 function mdDec(s) {
-  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(m, c) {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(m, c) {
     var codePoint = Number(c);
     return codePoint <= 1114111 ? String.fromCodePoint(codePoint) : m;
-  });
+  }).replace(/&amp;/g, "&");
 }
 __name(mdDec, "mdDec");
 __name2(mdDec, "mdDec");
+function mdStripTags(h) {
+  var text = "";
+  var i = 0;
+  while (i < h.length) {
+    if (h[i] !== "<") {
+      text += h[i++];
+      continue;
+    }
+    if (h.startsWith("<!--", i)) {
+      var commentEnd = h.indexOf("-->", i + 4);
+      if (commentEnd !== -1) {
+        i = commentEnd + 3;
+        continue;
+      }
+    }
+    var nameStart = h[i + 1] === "/" ? i + 2 : i + 1;
+    var firstChar = h.charCodeAt(nameStart);
+    if (!(firstChar >= 65 && firstChar <= 90 || firstChar >= 97 && firstChar <= 122)) {
+      text += h[i++];
+      continue;
+    }
+    var quote = "";
+    var end = nameStart + 1;
+    while (end < h.length) {
+      var char = h[end];
+      if (quote) {
+        if (char === quote) quote = "";
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === ">") {
+        break;
+      }
+      end++;
+    }
+    if (end === h.length) {
+      text += h.slice(i);
+      break;
+    }
+    i = end + 1;
+  }
+  return text;
+}
+__name(mdStripTags, "mdStripTags");
+__name2(mdStripTags, "mdStripTags");
 function mdClean(h) {
-  return h.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  return mdStripTags(h).replace(/\s+/g, " ").trim();
 }
 __name(mdClean, "mdClean");
 __name2(mdClean, "mdClean");
@@ -431,47 +475,48 @@ function mdRu(h, b) {
 __name(mdRu, "mdRu");
 __name2(mdRu, "mdRu");
 function convertMd(html, url) {
-  var t = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "";
+  var tagAttrs = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*";
+  var t = (html.match(new RegExp("<title\\b" + tagAttrs + ">([\\s\\S]*?)<\\/title\\s*>", "i")) || [])[1] || "";
   t = mdDec(t.trim());
   var b = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<head[\s\S]*?<\/head>|<nav[\s\S]*?<\/nav>|<footer[\s\S]*?<\/footer>|<aside[\s\S]*?<\/aside>|<svg[\s\S]*?<\/svg>|<!--[\s\S]*?-->/gi, "");
-  var m = b.match(/<(main|article)[^>]*>([\s\S]*?)<\/\1>/i);
+  var m = b.match(new RegExp("<(main|article)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>", "i"));
   if (m) b = m[2];
   else {
-    m = b.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    m = b.match(new RegExp("<body\\b" + tagAttrs + ">([\\s\\S]*?)<\\/body\\s*>", "i"));
     if (m) b = m[1];
   }
   var md = "";
   if (t) md += "# " + t + "\n\n";
-  b = b.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, function(_, level, content) {
+  b = b.replace(new RegExp("<h([1-6])\\b" + tagAttrs + ">([\\s\\S]*?)<\\/h\\1\\s*>", "gi"), function(_, level, content) {
     return "\n\n" + "#".repeat(Number(level)) + " " + mdClean(content) + "\n\n";
   });
-  b = b.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, function(_, c) {
-    return "\n\n```\n" + mdDec(c.replace(/<[^>]+>/g, "")).trim() + "\n```\n\n";
+  b = b.replace(new RegExp("<pre\\b" + tagAttrs + ">([\\s\\S]*?)<\\/pre\\s*>", "gi"), function(_, c) {
+    return "\n\n```\n" + mdStripTags(c).trim() + "\n```\n\n";
   });
-  b = b.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, function(_, c) {
-    return "`" + mdDec(c.replace(/<[^>]+>/g, "")).trim() + "`";
+  b = b.replace(new RegExp("<code\\b" + tagAttrs + ">([\\s\\S]*?)<\\/code\\s*>", "gi"), function(_, c) {
+    return "`" + mdStripTags(c).trim() + "`";
   });
-  b = b.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, function(_, c) {
+  b = b.replace(new RegExp("<blockquote\\b" + tagAttrs + ">([\\s\\S]*?)<\\/blockquote\\s*>", "gi"), function(_, c) {
     return "\n\n" + mdClean(c).split("\n").map(function(l) {
       return "> " + l;
     }).join("\n") + "\n\n";
   });
-  b = b.replace(/<img[^>]*>/gi, function(m2) {
+  b = b.replace(new RegExp("<img\\b" + tagAttrs + ">", "gi"), function(m2) {
     var a = (m2.match(/alt=["']([^"']*)["']/i) || [])[1] || "";
     var s = (m2.match(/src=["']([^"']*)["']/i) || [])[1] || "";
-    return "![" + mdDec(a) + "](" + mdRu(s, url) + ")";
+    return "![" + a + "](" + mdRu(s, url) + ")";
   });
-  b = b.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, function(_, h, c) {
+  b = b.replace(new RegExp("<a\\b" + tagAttrs + "\\bhref\\s*=\\s*([\"'])(.*?)\\1" + tagAttrs + ">([\\s\\S]*?)<\\/a\\s*>", "gi"), function(_, quote, h, c) {
     return "[" + mdClean(c) + "](" + mdRu(h, url) + ")";
   });
-  b = b.replace(/<(ul|ol)[^>]*>([\s\S]*?)<\/\1>/gi, function(_, type, c) {
-    var it = c.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+  b = b.replace(new RegExp("<(ul|ol)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>", "gi"), function(_, type, c) {
+    var it = c.match(new RegExp("<li\\b" + tagAttrs + ">([\\s\\S]*?)<\\/li\\s*>", "gi")) || [];
     var ordered = type.toLowerCase() === "ol";
     return "\n\n" + it.map(function(x, i2) {
       return (ordered ? i2 + 1 + ". " : "- ") + mdClean(x);
     }).join("\n") + "\n\n";
   });
-  b = b.replace(/<(strong|b|em|i)\b[^>]*>([\s\S]*?)<\/\1>|<hr\b[^>]*>|<p\b[^>]*>|<\/p>|<br\s*\/?>/gi, function(match, tag, content) {
+  b = b.replace(new RegExp("<(strong|b|em|i)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>|<hr\\b" + tagAttrs + "\\s*\\/?>|<p\\b" + tagAttrs + ">|<\\/p\\s*>|<br\\b" + tagAttrs + "\\s*\\/?>", "gi"), function(match, tag, content) {
     if (content !== void 0) {
       var text = mdClean(content);
       return tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*";
@@ -481,7 +526,7 @@ function convertMd(html, url) {
     if (/^<\/p/i.test(match)) return "\n";
     return "\n";
   });
-  b = b.replace(/<[^>]+>/g, "");
+  b = mdStripTags(b);
   b = mdDec(b);
   b = b.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
   return (md + b).replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -490,11 +535,13 @@ __name(convertMd, "convertMd");
 __name2(convertMd, "convertMd");
 var worker_default = {
   async fetch(request, env) {
-    var response = await handleRequest(request, env);
     if (request.method === "HEAD") {
+      var getRequest = new Request(request, { method: "GET" });
+      var response = await handleRequest(getRequest, env);
+      if (response.body) await response.body.cancel();
       return new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers });
     }
-    return response;
+    return handleRequest(request, env);
   },
   async scheduled(event, env) {
     return handleScheduled(event, env);

@@ -67,7 +67,7 @@ test("HEAD requests use normal routes and maintenance checks without a body", as
     const missing = await worker.default.fetch(new Request("https://hussamfaroug.com/missing", {
       method: "HEAD"
     }), {});
-    assert.equal(fetchMethod, "HEAD");
+    assert.equal(fetchMethod, "GET");
     assert.equal(missing.status, 404);
     assert.equal(await missing.text(), "");
 
@@ -129,6 +129,66 @@ test("Markdown conversion strips tags and escapes remaining angle brackets", () 
     worker.convertMd(html, "https://hussamfaroug.com"),
     "Nested text: 2 &lt; 3 && 4 &gt; 1.\nunfinished &lt;script"
   );
+});
+
+test("Markdown conversion preserves comparisons, quoted attributes, and encoded entities", () => {
+  const html = `<main title="main > content"><h1 title="heading > text">Heading</h1><p title='paragraph > text'>2 < 3 > 1 and &amp;lt;</p><pre>if (left < right) return 1;</pre></main>`;
+  assert.equal(
+    worker.convertMd(html, "https://hussamfaroug.com"),
+    "# Heading\n\n2 &lt; 3 &gt; 1 and &lt;\n\n```\nif (left &lt; right) return 1;\n```"
+  );
+  assert.equal(
+    worker.convertMd("<main><p><strong>&amp;lt;</strong> <code>&amp;lt;</code></p></main>", "https://hussamfaroug.com"),
+    "**&lt;** `&lt;`"
+  );
+  assert.equal(
+    worker.convertMd('<main><ul><li title="one > two">Item</li></ul></main>', "https://hussamfaroug.com"),
+    "- Item"
+  );
+});
+
+test("HEAD responses preserve GET representation headers and omit the body", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalHTMLRewriter = globalThis.HTMLRewriter;
+  const fetchMethods = [];
+  globalThis.fetch = async (_url, options) => {
+    fetchMethods.push(options.method);
+    return new Response("<html><head></head><body><p>Page</p></body></html>", {
+      headers: { "Content-Type": "text/html; charset=utf-8" }
+    });
+  };
+  globalThis.HTMLRewriter = class {
+    on() {
+      return this;
+    }
+
+    transform(response) {
+      return response;
+    }
+  };
+  try {
+    for (const accept of ["text/html", "text/markdown"]) {
+      const getResponse = await worker.default.fetch(new Request("https://hussamfaroug.com/page", {
+        headers: { Accept: accept }
+      }), {});
+      const headResponse = await worker.default.fetch(new Request("https://hussamfaroug.com/page", {
+        method: "HEAD",
+        headers: { Accept: accept }
+      }), {});
+
+      assert.equal(headResponse.status, getResponse.status);
+      assert.equal(headResponse.headers.get("Content-Type"), getResponse.headers.get("Content-Type"));
+      assert.equal(headResponse.headers.get("Vary"), getResponse.headers.get("Vary"));
+      assert.equal(headResponse.headers.get("Link"), getResponse.headers.get("Link"));
+      assert.equal(headResponse.headers.get("Content-Security-Policy") !== null, accept === "text/html");
+      assert.equal(await headResponse.text(), "");
+    }
+    assert.deepEqual(fetchMethods, ["GET", "GET", "GET", "GET"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalHTMLRewriter === undefined) delete globalThis.HTMLRewriter;
+    else globalThis.HTMLRewriter = originalHTMLRewriter;
+  }
 });
 
 test("Markdown conversion handles larger HTML documents", () => {
