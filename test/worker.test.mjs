@@ -146,6 +146,27 @@ test("HEAD requests use normal routes and maintenance checks without a body", as
   }
 });
 
+test("upstream fetch failures do not log request query parameters", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalConsoleError = console.error;
+  const logs = [];
+  globalThis.fetch = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  console.error = (...args) => logs.push(args.join(" "));
+  try {
+    const response = await worker.default.fetch(
+      new Request("https://hussamfaroug.com/page?access_token=sensitive-value"),
+      {}
+    );
+    assert.equal(response.status, 502);
+    assert.deepEqual(logs, ["origin fetch failed"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalConsoleError;
+  }
+});
+
 test("HTML responses vary by Accept and filter the legacy bridge script", async () => {
   const originalFetch = globalThis.fetch;
   const originalHTMLRewriter = globalThis.HTMLRewriter;

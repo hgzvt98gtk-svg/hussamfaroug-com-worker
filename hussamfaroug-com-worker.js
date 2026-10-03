@@ -594,7 +594,7 @@ async function handleRequest(req, env) {
   try {
     r = await fetch(pu, { method: req.method, headers: fh, redirect: "manual" });
   } catch (e) {
-    console.error("origin fetch failed:", e && e.message, pu);
+    console.error("origin fetch failed");
     return new Response("Origin unavailable", { status: 502, headers: {
       "Content-Type": "text/plain",
       "Retry-After": "30",
