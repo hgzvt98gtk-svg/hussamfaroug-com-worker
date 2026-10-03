@@ -1,0 +1,10 @@
+{
+  "name": "hussamfaroug-com-worker",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "html-rewriter-wasm": "0.4.1"
+  }
+}

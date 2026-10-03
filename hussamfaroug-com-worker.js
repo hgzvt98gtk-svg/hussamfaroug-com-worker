@@ -474,11 +474,23 @@ function mdRu(h, b) {
 }
 __name(mdRu, "mdRu");
 __name2(mdRu, "mdRu");
-function convertMd(html, url) {
+async function convertMd(html, url) {
   var tagAttrs = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*";
   var t = (html.match(new RegExp("<title\\b" + tagAttrs + ">([\\s\\S]*?)<\\/title\\s*>", "i")) || [])[1] || "";
   t = mdDec(t.trim());
-  var b = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<head[\s\S]*?<\/head>|<nav[\s\S]*?<\/nav>|<footer[\s\S]*?<\/footer>|<aside[\s\S]*?<\/aside>|<svg[\s\S]*?<\/svg>|<!--[\s\S]*?-->/gi, "");
+  var b = await new HTMLRewriter()
+    .on("script, style, head, header, nav, footer, aside, svg, meta, link", {
+      element(el) {
+        // Keep a text boundary so removal cannot reconstruct a tag.
+        el.replace(" ");
+      }
+    })
+    .onDocument({
+      comments(comment) {
+        comment.replace(" ");
+      }
+    })
+    .transform(new Response(html)).text();
   var m = b.match(new RegExp("<(main|article)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>", "i"));
   if (m) b = m[2];
   else {
@@ -614,7 +626,7 @@ async function handleRequest(req, env) {
   }
   if (accept.indexOf("text/markdown") !== -1) {
     var htmlText = await r.text();
-    var md = convertMd(htmlText, pu);
+    var md = await convertMd(htmlText, pu);
     var tokens = Math.max(1, Math.ceil(encoder.encode(md).length / 4));
     return new Response(md, { headers: {
       "Content-Type": "text/markdown; charset=utf-8",

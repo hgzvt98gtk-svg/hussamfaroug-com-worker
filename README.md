@@ -35,6 +35,11 @@ You can also trigger a deploy manually from the **Actions** tab → **Run workfl
 - `wrangler.toml` — Wrangler configuration (Worker name, entry point, KV binding, and custom-domain route; no cron trigger)
 - `hussamfaroug-com-worker.js` — the Worker code
 
+## Tests
+
+Run `npm ci` followed by `npm test` (or `node --test`). Markdown filtering uses
+Cloudflare's native `HTMLRewriter`; Node tests use its WebAssembly parser implementation.
+
 ## Branch protection (fixes CASB findings)
 
 After your first successful workflow run, enable branch protection in GitHub:
