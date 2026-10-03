@@ -372,8 +372,12 @@ function mdDec(s) {
   }).replace(/&amp;/g, "&");
 }
 __name(mdDec, "mdDec");
+function mdStripTags(h) {
+  return h.replace(/<\/?[a-z][a-z0-9:-]*(?:\s[^<>]*?)?\/?>/gi, "");
+}
+__name(mdStripTags, "mdStripTags");
 function mdClean(h) {
-  return h.replace(/<|>/g, "").replace(/\s+/g, " ").trim();
+  return mdStripTags(h).replace(/\s+/g, " ").trim();
 }
 __name(mdClean, "mdClean");
 function mdRu(h, b) {
@@ -400,10 +404,10 @@ function convertMd(html, url) {
     return "\n\n" + "#".repeat(Number(level)) + " " + mdClean(content) + "\n\n";
   });
   b = b.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, function(_, c) {
-    return "\n\n```\n" + mdDec(c.replace(/<|>/g, "")).trim() + "\n```\n\n";
+    return "\n\n```\n" + mdDec(mdStripTags(c)).trim() + "\n```\n\n";
   });
   b = b.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, function(_, c) {
-    return "`" + mdDec(c.replace(/<|>/g, "")).trim() + "`";
+    return "`" + mdDec(mdStripTags(c)).trim() + "`";
   });
   b = b.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, function(_, c) {
     return "\n\n" + mdClean(c).split("\n").map(function(l) {
@@ -435,7 +439,7 @@ function convertMd(html, url) {
     if (/^<\/p/i.test(match)) return "\n";
     return "\n";
   });
-  b = b.replace(/<|>/g, "");
+  b = mdStripTags(b);
   b = mdDec(b);
   b = b.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
   return (md + b).replace(/</g, "&lt;").replace(/>/g, "&gt;");
