@@ -144,13 +144,89 @@ refreshes and allow for those overlap periods; this is not instant revocation.
 
 Pull requests and main pushes run `npm ci` and `npm test` on Node 22.
 Deployment on main waits for the test job. No standalone lint/build scripts
-are defined. Existing large-document coverage exercises 5,000 paragraphs;
-retain the multi-pass converter until profiling justifies replacing it.
+are defined. Large-document coverage exercises 5,000 paragraphs. The converter
+retains its pass order and parser filtering; fixed tag regexes are shared and
+tag stripping collects contiguous text slices instead of per-character strings.
 
 Before release, validate Wrangler configuration and test staging routing,
 double-slash destination confinement, HEAD, cache headers, origin timeouts,
 and centrally provisioned signing keys. Local tests do not establish deployed
 edge normalization, KV propagation, or shared-cache behavior.
+
+### Markdown benchmark (Phase 2.2)
+
+Measured on Node v22.23.3, Linux 6.17.0-1022-azure x86-64, Intel Xeon Platinum
+8573C, using the locked html-rewriter-wasm parser. CPU profiling first exposed a
+Node ReadableStream queue artifact in the test adapter; the benchmark below
+buffers parser output to exclude that artifact. The buffered baseline profile
+showed conversion/GC costs, motivating fixed-regex hoisting and text slicing.
+No passes were fused, and UTF-8 token accounting, read limits, and timeouts were
+not changed.
+
+Paired run: five warmups per version, nine alternating samples, 25 conversions
+per small sample and two per near-limit sample. Each output was compared exactly.
+
+| Input UTF-8 bytes | Before median (range), ms | After median (range), ms | Output bytes |
+|---|---|---|---|
+| 5,293 | 1.485 (1.265–2.130) | 1.293 (1.227–1.715) | 4,748 |
+| 1,048,533 | 244.044 (229.133–254.532) | 195.613 (189.288–201.876) | 943,664 |
+
+Identical before/after SHA-256:
+small `b2a727920febfc5aeb10da501b61385820ec20ba723b4e3c3c5d798d10601b7a`;
+near-limit `838a5cc33cf591e02259455db769ea6b2aa7aefbec23273aadccdd79a1d1dc3f`.
+These are local corpus-specific measurements, not promised edge CPU savings.
+Further pass fusion is deferred. To reproduce from this repository after `npm ci`
+(baseline is the Phase 3.3 commit; fetch its history if needed):
+
+```sh
+BASE_REF=431c0b1 node --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { HTMLRewriter as Parser } from 'html-rewriter-wasm';
+import { convertMd as after } from './markdown.js';
+const source = execFileSync('git', ['show', `${process.env.BASE_REF}:markdown.js`], { encoding: 'utf8' });
+const { convertMd: before } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+globalThis.HTMLRewriter = class {
+  handlers = [];
+  on(...args) { this.handlers.push(['on', ...args]); return this; }
+  onDocument(...args) { this.handlers.push(['onDocument', ...args]); return this; }
+  transform(response) {
+    const handlers = this.handlers;
+    return { async text() {
+      const chunks = [], parser = new Parser(chunk => chunks.push(chunk.slice()));
+      try {
+        for (const [method, ...args] of handlers) parser[method](...args);
+        for await (const chunk of response.body) await parser.write(chunk);
+        await parser.end(); return new TextDecoder().decode(Buffer.concat(chunks));
+      } finally { parser.free(); }
+    }};
+  }
+};
+const unit = '<p>Résumé 世界 🙂 and ordinary prose with <strong>nested text</strong>, <a href="/path?q=1&amp;x=2">a link</a>, and <img src="/pic.png" alt="picture">.</p><pre>if (left &lt; right) return 1;</pre><nav>removed</nav>';
+for (const [name, count, batch] of [['small', 24, 25], ['near-limit', Math.floor((1048576 - 13) / Buffer.byteLength(unit)), 2]]) {
+  const html = '<main>' + unit.repeat(count) + '</main>';
+  const output = await before(html, 'https://site.example/page');
+  assert.equal(await after(html, 'https://site.example/page'), output);
+  const samples = { before: [], after: [] };
+  for (const convert of [before, after]) for (let i = 0; i < 5; i++) await convert(html, 'https://site.example/page');
+  for (let sample = 0; sample < 9; sample++) {
+    for (const [label, convert] of sample % 2 ? [['after', after], ['before', before]] : [['before', before], ['after', after]]) {
+      const start = performance.now();
+      for (let i = 0; i < batch; i++) assert.equal(await convert(html, 'https://site.example/page'), output);
+      samples[label].push((performance.now() - start) / batch);
+    }
+  }
+  for (const values of Object.values(samples)) values.sort((a, b) => a - b);
+  console.log({ name, inputBytes: Buffer.byteLength(html), outputBytes: Buffer.byteLength(output),
+    sha256: createHash('sha256').update(output).digest('hex'), beforeMs: samples.before[4], afterMs: samples.after[4],
+    beforeRange: [samples.before[0], samples.before[8]], afterRange: [samples.after[0], samples.after[8]] });
+}
+NODE
+```
+
+For a CPU profile, add `--cpu-prof --cpu-prof-dir=/tmp` before
+`--input-type=module`; keep profiling artifacts outside the repository.
 
 ## Cron trigger
 
