@@ -32,7 +32,7 @@ You can also trigger a deploy manually from the **Actions** tab → **Run workfl
 ## Files
 
 - `.github/workflows/deploy.yml` — the CI/CD workflow
-- `wrangler.toml` — Wrangler configuration (Worker name, entry point, KV binding, route, cron trigger)
+- `wrangler.toml` — Wrangler configuration (Worker name, entry point, KV binding, and custom-domain route; no cron trigger)
 - `hussamfaroug-com-worker.js` — the Worker code
 
 ## Branch protection (fixes CASB findings)
