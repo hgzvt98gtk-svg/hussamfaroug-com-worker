@@ -32,6 +32,26 @@ test("bot-auth signature uses a structured-field byte sequence", async () => {
   assert.match(response.headers.get("Signature"), /^sig1=:[A-Za-z0-9+/]+={0,2}:$/);
   assert.equal(response.headers.get("Cache-Control"), "public, max-age=240");
   const signatureInput = response.headers.get("Signature-Input");
+  const signatureParams = signatureInput.slice(signatureInput.indexOf("=") + 1);
+  const signatureAgent = response.headers.get("Signature-Agent");
+  const signatureBase = [
+    '"@authority": hussamfaroug.com',
+    `"signature-agent": ${signatureAgent}`,
+    `"@signature-params": ${signatureParams}`
+  ].join("\n");
+  const { keys: [publicKey] } = await response.json();
+  const verificationKey = await crypto.subtle.importKey(
+    "jwk",
+    { kty: publicKey.kty, crv: publicKey.crv, x: publicKey.x },
+    { name: "Ed25519" },
+    false,
+    ["verify"]
+  );
+  const signature = Buffer.from(response.headers.get("Signature").match(/^sig1=:([^:]+):$/)[1], "base64");
+  assert.equal(
+    await crypto.subtle.verify("Ed25519", verificationKey, signature, new TextEncoder().encode(signatureBase)),
+    true
+  );
   const created = Number(signatureInput.match(/created=(\d+)/)[1]);
   const expires = Number(signatureInput.match(/expires=(\d+)/)[1]);
   const maxAge = Number(response.headers.get("Cache-Control").match(/max-age=(\d+)/)[1]);
