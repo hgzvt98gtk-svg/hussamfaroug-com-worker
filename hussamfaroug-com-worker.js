@@ -554,24 +554,8 @@ var worker_default = {
       return new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers });
     }
     return handleRequest(request, env);
-  },
-  async scheduled(event, env) {
-    return handleScheduled(event, env);
   }
 };
-async function handleScheduled(event, env) {
-  var pages = ["/", "/index.html", "/Privacy.html"];
-  var origin = "https://hgzvt98gtk-svg-github-io.pages.dev";
-  for (var i = 0; i < pages.length; i++) {
-    try {
-      var u = origin + pages[i];
-      var r = await fetch(u, { method: "GET", headers: { "User-Agent": "cache-warmer/1.0" }, cf: { cacheTtl: 3600 } });
-      console.log("cache warmed:", pages[i], r.status);
-    } catch (e) {
-      console.error("cache warm failed:", pages[i], e && e.message);
-    }
-  }
-}
 
 async function handleRequest(req, env) {
   if (req.method === "OPTIONS") {

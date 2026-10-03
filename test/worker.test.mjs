@@ -47,6 +47,8 @@ assert.notEqual(moduleSource, source, "Worker exports should be available to tes
 const worker = await import(`data:text/javascript;base64,${Buffer.from(moduleSource).toString("base64")}`);
 
 test("metadata responses preserve content types and cache policies", async () => {
+  assert.equal(worker.default.scheduled, undefined);
+
   const health = await worker.default.fetch(new Request("https://hussamfaroug.com/.well-known/health"), {});
   assert.equal(health.headers.get("Cache-Control"), "no-store");
   assert.equal((await health.json()).status, "ok");
