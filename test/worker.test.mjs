@@ -464,6 +464,24 @@ test("Markdown avoids shared caching for credentials or upstream cookies", async
   }
 });
 
+test("Markdown avoids shared caching for custom identity headers", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const header of ["X-API-Key", "X-Auth-Token", "X-Access-Token", "Bearer", "X-Custom-Auth"]) {
+      globalThis.fetch = async () => new Response("<main>Content</main>", {
+        headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=3600" }
+      });
+      const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+        headers: { Accept: "text/markdown", [header]: "test-value" }
+      }), testEnv);
+      assert.equal(response.headers.get("Cache-Control"), "private, no-store", header);
+      await response.text();
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("Markdown handles oversized responses and body-read failures without leaking details", async () => {
   const original = globalThis.fetch;
   try {
