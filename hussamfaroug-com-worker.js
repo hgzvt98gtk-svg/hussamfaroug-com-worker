@@ -113,7 +113,7 @@ async function botAuth(req, env) {
     "Signature-Agent": '"' + o + '"',
     "Signature-Input": si,
     "Signature": "sig1=:" + sg + ":",
-    "Cache-Control": PUBLIC_CACHE_CONTROL
+    "Cache-Control": "public, max-age=240"
   } });
 }
 __name(botAuth, "botAuth");
