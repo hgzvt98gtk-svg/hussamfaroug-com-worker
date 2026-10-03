@@ -71,6 +71,16 @@ HTTP(S), contain no credentials, and differ from the public Worker origin.
 HEAD requests that prefer Markdown return the Markdown headers without reading or
 converting the origin body, so they omit `x-markdown-tokens`.
 
+Caller-supplied Forwarded, X-Forwarded-Host/Proto/For, X-Real-IP, X-Client-IP,
+Client-IP, X-Cluster-Client-IP, True-Client-IP, CF-Connecting-IP/IPv6,
+CF-Pseudo-IPv4, and Fastly-Client-IP are deleted from the copied origin headers,
+along with Connection-nominated fields. No replacement client identity is
+invented. This list is not a trust guarantee for arbitrary custom headers.
+Cloudflare can add or rewrite platform headers on subrequests after this filter;
+mocked fetch assertions verify only what the Worker passes to fetch. Validate the
+actual deployed origin headers and routing before trusting any client-IP field
+for authorization or rate limiting.
+
 Origin requests are unconditional (no Range or conditional validator headers),
 request HTML when available, and have a 10-second timeout covering headers and
 body transfer. Client cancellation propagates to the origin. Non-HTML responses
