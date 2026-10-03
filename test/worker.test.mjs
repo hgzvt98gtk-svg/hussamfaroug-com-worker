@@ -526,6 +526,100 @@ test("Markdown avoids shared caching for custom identity headers", async () => {
   }
 });
 
+test("identity cache policy covers GET/HEAD and every proxied representation", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  const logs = [];
+  console.error = (...args) => logs.push(args.join(" "));
+  try {
+    for (const method of ["GET", "HEAD"]) {
+      for (const representation of ["html", "markdown", "json", "null"]) {
+        for (const identity of ["X-aPi-KeY", "x-AuTh-ToKeN", "X-aCcEsS-ToKeN", "bEaReR", "x-CuStOm-AuTh", "aUtHoRiZaTiOn", "cOoKiE", "Set-Cookie", "none"]) {
+          for (const cache of ["public, max-age=60, s-maxage=120", "private, max-age=0", null]) {
+            const upstreamHeaders = {
+              "Content-Type": representation === "json" ? "application/json" : "text/html",
+              Vary: "Origin",
+              "CDN-Cache-Control": "public, s-maxage=600",
+              "Cloudflare-CDN-Cache-Control": "public, max-age=600",
+              "Surrogate-Control": "max-age=600"
+            };
+            if (cache !== null) upstreamHeaders["Cache-Control"] = cache;
+            if (identity === "Set-Cookie") upstreamHeaders["Set-Cookie"] = "session=credential-marker";
+            globalThis.fetch = async (_url, options) => {
+              if (["aUtHoRiZaTiOn", "cOoKiE"].includes(identity)) assert.equal(options.headers.has(identity), false);
+              else if (!["none", "Set-Cookie"].includes(identity)) assert.equal(options.headers.get(identity), "credential-marker");
+              return new Response(representation === "null" ? null : representation === "json" ? '{"ok":true}' : "<html><head></head><body><p>Content</p></body></html>", {
+                status: representation === "null" ? 204 : 404, headers: upstreamHeaders
+              });
+            };
+            const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+              method,
+              headers: {
+                Accept: representation === "markdown" ? "text/markdown" : "text/html",
+                ...(!["none", "Set-Cookie"].includes(identity) ? { [identity]: "credential-marker" } : {})
+              }
+            }), testEnv);
+            const expected = identity !== "none" ? "private, no-store" : cache ?? (representation === "markdown" ? "no-store" : null);
+            assert.equal(response.headers.get("Cache-Control"), expected, `${method}/${representation}/${identity}/${cache}`);
+            for (const name of ["CDN-Cache-Control", "Cloudflare-CDN-Cache-Control", "Surrogate-Control"]) {
+              assert.equal(response.headers.get(name), identity === "none" ? upstreamHeaders[name] : "private, no-store");
+            }
+            assert.equal(response.status, representation === "null" ? 204 : 404);
+            assert.equal(response.headers.get("Vary"), ["html", "markdown"].includes(representation) ? "Origin, Accept" : "Origin");
+            const body = await response.text();
+            if (method === "HEAD" || representation === "null") assert.equal(body, "");
+            else if (representation === "markdown") assert.equal(body, "Content");
+            else if (representation === "json") assert.equal(body, '{"ok":true}');
+            else assert.match(body, /<p>Content<\/p>/);
+          }
+        }
+      }
+    }
+    assert.deepEqual(logs, []);
+    for (const path of ["/robots.txt", "/.well-known/api-catalog"]) {
+      const response = await worker.fetch(new Request("https://hussamfaroug.com" + path, {
+        headers: { "X-API-Key": "credential-marker" }
+      }), testEnv);
+      assert.equal(response.headers.get("Cache-Control"), "public, max-age=3600");
+      await response.text();
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+});
+
+test("identity cache policy preserves non-HTML streaming and HEAD cancellation", async () => {
+  const originalFetch = globalThis.fetch;
+  let cancelled;
+  globalThis.fetch = async () => {
+    cancelled = false;
+    return new Response(new ReadableStream({
+      pull(controller) { controller.enqueue(new TextEncoder().encode("chunk")); },
+      cancel() { cancelled = true; }
+    }, { highWaterMark: 0 }), {
+      status: 206, headers: { "Content-Type": "application/octet-stream", "Cache-Control": "public" }
+    });
+  };
+  try {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await worker.fetch(new Request("https://hussamfaroug.com/file", {
+        method, headers: { Cookie: "credential-marker" }
+      }), testEnv);
+      assert.equal(response.status, 206);
+      assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+      if (method === "GET") {
+        const reader = response.body.getReader();
+        assert.equal(new TextDecoder().decode((await reader.read()).value), "chunk");
+        await reader.cancel();
+      } else assert.equal(response.body, null);
+      assert.equal(cancelled, true);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Markdown handles oversized responses and body-read failures without leaking details", async () => {
   const original = globalThis.fetch;
   try {
