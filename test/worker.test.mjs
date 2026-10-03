@@ -58,6 +58,14 @@ test("Markdown conversion handles formatting, nested markup, links, and lists", 
   assert.equal(worker.convertMd(html, "https://hussamfaroug.com"), expected);
 });
 
+test("Markdown conversion strips tags and escapes remaining angle brackets", () => {
+  const html = "<main><p><span>Nested text</span>: 2 < 3 &amp;&amp; 4 &gt; 1.</p><!-- removed -->unfinished <script</main>";
+  assert.equal(
+    worker.convertMd(html, "https://hussamfaroug.com"),
+    "Nested text: 2 &lt; 3 && 4 &gt; 1.\nunfinished &lt;script"
+  );
+});
+
 test("Markdown conversion handles larger HTML documents", () => {
   const paragraphCount = 5000;
   const html = `<main>${"<p>large document</p>".repeat(paragraphCount)}</main>`;

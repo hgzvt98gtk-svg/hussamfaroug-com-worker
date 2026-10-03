@@ -5,6 +5,3 @@ compatibility_date = "2024-09-23"
 [[kv_namespaces]]
 binding = "SITE_CONFIG"
 id = "b36f257a4cb045028cbc637027acb086"
-
-[triggers]
-crons = ["*/30 * * * *"]

@@ -372,8 +372,51 @@ function mdDec(s) {
   }).replace(/&amp;/g, "&");
 }
 __name(mdDec, "mdDec");
+function mdStripTags(h) {
+  var text = "";
+  var i = 0;
+  while (i < h.length) {
+    if (h[i] !== "<") {
+      text += h[i++];
+      continue;
+    }
+    if (h.startsWith("<!--", i)) {
+      var commentEnd = h.indexOf("-->", i + 4);
+      if (commentEnd !== -1) {
+        i = commentEnd + 3;
+        continue;
+      }
+    }
+    var nameStart = h[i + 1] === "/" ? i + 2 : i + 1;
+    var firstChar = h.charCodeAt(nameStart);
+    if (!(firstChar >= 65 && firstChar <= 90 || firstChar >= 97 && firstChar <= 122)) {
+      text += h[i++];
+      continue;
+    }
+    var quote = "";
+    var end = nameStart + 1;
+    while (end < h.length) {
+      var char = h[end];
+      if (quote) {
+        if (char === quote) quote = "";
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else if (char === ">") {
+        break;
+      }
+      end++;
+    }
+    if (end === h.length) {
+      text += h.slice(i);
+      break;
+    }
+    i = end + 1;
+  }
+  return text;
+}
+__name(mdStripTags, "mdStripTags");
 function mdClean(h) {
-  return h.replace(/<|>/g, "").replace(/\s+/g, " ").trim();
+  return mdStripTags(h).replace(/\s+/g, " ").trim();
 }
 __name(mdClean, "mdClean");
 function mdRu(h, b) {
@@ -400,10 +443,10 @@ function convertMd(html, url) {
     return "\n\n" + "#".repeat(Number(level)) + " " + mdClean(content) + "\n\n";
   });
   b = b.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, function(_, c) {
-    return "\n\n```\n" + mdDec(c.replace(/<|>/g, "")).trim() + "\n```\n\n";
+    return "\n\n```\n" + mdDec(mdStripTags(c)).trim() + "\n```\n\n";
   });
   b = b.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, function(_, c) {
-    return "`" + mdDec(c.replace(/<|>/g, "")).trim() + "`";
+    return "`" + mdDec(mdStripTags(c)).trim() + "`";
   });
   b = b.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, function(_, c) {
     return "\n\n" + mdClean(c).split("\n").map(function(l) {
@@ -435,7 +478,7 @@ function convertMd(html, url) {
     if (/^<\/p/i.test(match)) return "\n";
     return "\n";
   });
-  b = b.replace(/<|>/g, "");
+  b = mdStripTags(b);
   b = mdDec(b);
   b = b.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
   return (md + b).replace(/</g, "&lt;").replace(/>/g, "&gt;");
