@@ -74,6 +74,8 @@ request HTML when available, and have a 10-second timeout covering headers and
 body transfer. Client cancellation propagates to the origin. Non-HTML responses
 remain streamed. HTML responses stream through Cloudflare's HTMLRewriter.
 Transformed responses discard upstream byte lengths, encodings, and validators.
+The `enable_request_signal` compatibility flag enables incoming client-disconnect
+signals despite the older compatibility date.
 
 Markdown is selected when explicitly requested with a positive Accept quality
 at least as high as HTML. Wildcard-only requests retain HTML. Conversion reads
