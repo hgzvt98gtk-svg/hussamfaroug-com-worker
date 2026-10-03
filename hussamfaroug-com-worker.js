@@ -474,23 +474,9 @@ function mdRu(h, b) {
 }
 __name(mdRu, "mdRu");
 __name2(mdRu, "mdRu");
-var mdTagAttrs = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*";
-var mdPatterns = {
-  title: new RegExp("<title\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/title\\s*>", "i"),
-  content: new RegExp("<(main|article)\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>", "i"),
-  body: new RegExp("<body\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/body\\s*>", "i"),
-  heading: new RegExp("<h([1-6])\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/h\\1\\s*>", "gi"),
-  pre: new RegExp("<pre\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/pre\\s*>", "gi"),
-  code: new RegExp("<code\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/code\\s*>", "gi"),
-  blockquote: new RegExp("<blockquote\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/blockquote\\s*>", "gi"),
-  image: new RegExp("<img\\b" + mdTagAttrs + ">", "gi"),
-  link: new RegExp("<a\\b" + mdTagAttrs + "\\bhref\\s*=\\s*([\"'])(.*?)\\1" + mdTagAttrs + ">([\\s\\S]*?)<\\/a\\s*>", "gi"),
-  list: new RegExp("<(ul|ol)\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>", "gi"),
-  listItem: new RegExp("<li\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/li\\s*>", "gi"),
-  inline: new RegExp("<(strong|b|em|i)\\b" + mdTagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>|<hr\\b" + mdTagAttrs + "\\s*\\/?>|<p\\b" + mdTagAttrs + ">|<\\/p\\s*>|<br\\b" + mdTagAttrs + "\\s*\\/?>", "gi")
-};
 async function convertMd(html, url) {
-  var t = (html.match(mdPatterns.title) || [])[1] || "";
+  var tagAttrs = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*";
+  var t = (html.match(new RegExp("<title\\b" + tagAttrs + ">([\\s\\S]*?)<\\/title\\s*>", "i")) || [])[1] || "";
   t = mdDec(t.trim());
   var b = await new HTMLRewriter()
     .on("script, style, head, header, nav, footer, aside, svg, meta, link", {
@@ -505,44 +491,44 @@ async function convertMd(html, url) {
       }
     })
     .transform(new Response(html)).text();
-  var m = b.match(mdPatterns.content);
+  var m = b.match(new RegExp("<(main|article)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>", "i"));
   if (m) b = m[2];
   else {
-    m = b.match(mdPatterns.body);
+    m = b.match(new RegExp("<body\\b" + tagAttrs + ">([\\s\\S]*?)<\\/body\\s*>", "i"));
     if (m) b = m[1];
   }
   var md = "";
   if (t) md += "# " + t + "\n\n";
-  b = b.replace(mdPatterns.heading, function(_, level, content) {
+  b = b.replace(new RegExp("<h([1-6])\\b" + tagAttrs + ">([\\s\\S]*?)<\\/h\\1\\s*>", "gi"), function(_, level, content) {
     return "\n\n" + "#".repeat(Number(level)) + " " + mdClean(content) + "\n\n";
   });
-  b = b.replace(mdPatterns.pre, function(_, c) {
+  b = b.replace(new RegExp("<pre\\b" + tagAttrs + ">([\\s\\S]*?)<\\/pre\\s*>", "gi"), function(_, c) {
     return "\n\n```\n" + mdStripTags(c).trim() + "\n```\n\n";
   });
-  b = b.replace(mdPatterns.code, function(_, c) {
+  b = b.replace(new RegExp("<code\\b" + tagAttrs + ">([\\s\\S]*?)<\\/code\\s*>", "gi"), function(_, c) {
     return "`" + mdStripTags(c).trim() + "`";
   });
-  b = b.replace(mdPatterns.blockquote, function(_, c) {
+  b = b.replace(new RegExp("<blockquote\\b" + tagAttrs + ">([\\s\\S]*?)<\\/blockquote\\s*>", "gi"), function(_, c) {
     return "\n\n" + mdClean(c).split("\n").map(function(l) {
       return "> " + l;
     }).join("\n") + "\n\n";
   });
-  b = b.replace(mdPatterns.image, function(m2) {
+  b = b.replace(new RegExp("<img\\b" + tagAttrs + ">", "gi"), function(m2) {
     var a = (m2.match(/alt=["']([^"']*)["']/i) || [])[1] || "";
     var s = (m2.match(/src=["']([^"']*)["']/i) || [])[1] || "";
     return "![" + a + "](" + mdRu(s, url) + ")";
   });
-  b = b.replace(mdPatterns.link, function(_, quote, h, c) {
+  b = b.replace(new RegExp("<a\\b" + tagAttrs + "\\bhref\\s*=\\s*([\"'])(.*?)\\1" + tagAttrs + ">([\\s\\S]*?)<\\/a\\s*>", "gi"), function(_, quote, h, c) {
     return "[" + mdClean(c) + "](" + mdRu(h, url) + ")";
   });
-  b = b.replace(mdPatterns.list, function(_, type, c) {
-    var it = c.match(mdPatterns.listItem) || [];
+  b = b.replace(new RegExp("<(ul|ol)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>", "gi"), function(_, type, c) {
+    var it = c.match(new RegExp("<li\\b" + tagAttrs + ">([\\s\\S]*?)<\\/li\\s*>", "gi")) || [];
     var ordered = type.toLowerCase() === "ol";
     return "\n\n" + it.map(function(x, i2) {
       return (ordered ? i2 + 1 + ". " : "- ") + mdClean(x);
     }).join("\n") + "\n\n";
   });
-  b = b.replace(mdPatterns.inline, function(match, tag, content) {
+  b = b.replace(new RegExp("<(strong|b|em|i)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>|<hr\\b" + tagAttrs + "\\s*\\/?>|<p\\b" + tagAttrs + ">|<\\/p\\s*>|<br\\b" + tagAttrs + "\\s*\\/?>", "gi"), function(match, tag, content) {
     if (content !== void 0) {
       var text = mdClean(content);
       return tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*";
