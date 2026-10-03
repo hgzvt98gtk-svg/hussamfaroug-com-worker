@@ -4,6 +4,7 @@ import { HTMLRewriter as WasmHTMLRewriter } from "html-rewriter-wasm";
 import worker from "../hussamfaroug-com-worker.js";
 import { botAuth } from "../bot-auth.js";
 import { convertMd } from "../markdown.js";
+import { MAX_HTML_BYTES } from "../proxy.js";
 
 const testEnv = { ORIGIN: "https://hgzvt98gtk-svg-github-io.pages.dev" };
 
@@ -59,9 +60,11 @@ test("metadata responses preserve content types and cache policies", async () =>
 });
 
 test("bot-auth signature uses a structured-field byte sequence", async () => {
+  const keyPair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const privateJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
   const response = await botAuth(
     new Request("https://hussamfaroug.com/.well-known/http-message-signatures-directory"),
-    {}
+    { SITE_CONFIG: { get: async () => JSON.stringify(privateJwk) } }
   );
   assert.match(response.headers.get("Signature"), /^sig1=:[A-Za-z0-9+/]+={0,2}:$/);
   assert.equal(response.headers.get("Cache-Control"), "public, max-age=240");
@@ -390,4 +393,71 @@ test("Markdown conversion handles larger HTML documents", async () => {
   const expected = Array(paragraphCount).fill("large document").join("\n\n");
 
   assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
+});
+
+test("Markdown preserves status, restrictive caching, variation, and safe representation headers", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response("<main><p>Missing</p></main>", {
+    status: 404,
+    headers: {
+      "Content-Type": "text/html",
+      "Cache-Control": "private, no-store",
+      Vary: "Cookie, Accept-Language",
+      ETag: '"html-version"',
+      "Content-Length": "35"
+    }
+  });
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+      headers: { Accept: "text/markdown" }
+    }), testEnv);
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+    assert.equal(response.headers.get("Vary"), "Cookie, Accept-Language, Accept");
+    assert.equal(response.headers.has("ETag"), false);
+    assert.equal(response.headers.has("Content-Length"), false);
+    assert.equal(await response.text(), "Missing");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Markdown avoids shared caching for credentials or upstream cookies", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const variant of ["Authorization", "Cookie", "Set-Cookie", "none"]) {
+      globalThis.fetch = async () => new Response("<main>Content</main>", {
+        headers: { "Content-Type": "text/html", ...(variant === "Set-Cookie" ? { "Set-Cookie": "session=test" } : {}) }
+      });
+      const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+        headers: { Accept: "text/markdown", ...(["Authorization", "Cookie"].includes(variant) ? { [variant]: "test" } : {}) }
+      }), testEnv);
+      assert.equal(response.headers.get("Cache-Control"), variant === "none" ? "no-store" : "private, no-store");
+      await response.text();
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("Markdown handles oversized responses and body-read failures without leaking details", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const oversized of [true, false]) {
+      globalThis.fetch = async () => new Response(new ReadableStream({
+        start(controller) {
+          if (oversized) controller.enqueue(new Uint8Array(MAX_HTML_BYTES + 1));
+          else controller.error(new Error("sensitive origin details"));
+        }
+      }), { headers: { "Content-Type": "text/html" } });
+      const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+        headers: { Accept: "text/markdown" }
+      }), testEnv);
+      assert.equal(response.status, 502);
+      assert.equal(response.headers.get("Cache-Control"), "no-store");
+      assert.equal(await response.text(), "Origin conversion unavailable");
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
 });

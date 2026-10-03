@@ -2,12 +2,12 @@ name = "hussamfaroug-com"
 main = "hussamfaroug-com-worker.js"
 compatibility_date = "2024-09-23"
 
-[vars]
-ORIGIN = "https://hgzvt98gtk-svg-github-io.pages.dev"
-
 routes = [
   { pattern = "hussamfaroug.com/*", zone_name = "hussamfaroug.com" }
 ]
+
+[vars]
+ORIGIN = "https://hgzvt98gtk-svg-github-io.pages.dev"
 
 [[kv_namespaces]]
 binding = "SITE_CONFIG"
