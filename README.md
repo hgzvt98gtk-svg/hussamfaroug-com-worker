@@ -61,4 +61,4 @@ The Worker code references `env.FLAGS.getBooleanValue("maintenance-mode", false)
 
 ## Cron trigger
 
-The Worker has a `scheduled()` handler that warms the Pages cache, but no cron trigger is configured in `wrangler.toml`, so the handler does not run automatically.
+No cron trigger or `scheduled()` handler is configured, so cache warming is not currently scheduled.
