@@ -30,6 +30,12 @@ test("bot-auth signature uses a structured-field byte sequence", async () => {
     {}
   );
   assert.match(response.headers.get("Signature"), /^sig1=:[A-Za-z0-9+/]+={0,2}:$/);
+  assert.equal(response.headers.get("Cache-Control"), "public, max-age=240");
+  const signatureInput = response.headers.get("Signature-Input");
+  const created = Number(signatureInput.match(/created=(\d+)/)[1]);
+  const expires = Number(signatureInput.match(/expires=(\d+)/)[1]);
+  const maxAge = Number(response.headers.get("Cache-Control").match(/max-age=(\d+)/)[1]);
+  assert.ok(maxAge < expires - created);
 });
 
 test("Markdown conversion and response token count preserve UTF-8 output", async () => {
