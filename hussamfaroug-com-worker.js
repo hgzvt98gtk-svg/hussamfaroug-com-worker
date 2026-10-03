@@ -74,6 +74,8 @@ async function handleRequest(request, env, headOnly = false) {
   var connectionHeaders = (forwardedHeaders.get("Connection") || "").split(",").map(header => header.trim()).filter(Boolean);
   [...connectionHeaders, "connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade",
     "host", "cookie", "authorization", "proxy-authorization", "forwarded", "x-forwarded-host", "x-forwarded-proto",
+    "x-forwarded-for", "x-real-ip", "x-client-ip", "client-ip", "x-cluster-client-ip", "true-client-ip",
+    "cf-connecting-ip", "cf-connecting-ipv6", "cf-pseudo-ipv4", "fastly-client-ip",
     "if-none-match", "if-modified-since", "range", "if-range"].forEach(function(header) {
     forwardedHeaders.delete(header);
   });

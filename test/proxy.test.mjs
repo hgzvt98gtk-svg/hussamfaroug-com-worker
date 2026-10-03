@@ -37,6 +37,36 @@ test("proxy confines slash paths and strips credentials and nominated hop header
   }
 });
 
+test("proxy deletes spoofed client-IP headers without inventing a trusted identity", async () => {
+  const originalFetch = globalThis.fetch;
+  const spoofed = [
+    "fOrWaRdEd", "x-FoRwArDeD-hOsT", "X-Forwarded-Proto", "x-FoRwArDeD-fOr", "X-rEaL-iP",
+    "X-Client-IP", "Client-IP", "X-Cluster-Client-IP", "True-Client-IP", "CF-Connecting-IP",
+    "CF-Connecting-IPv6", "CF-Pseudo-IPv4", "Fastly-Client-IP", "X-Nominated-IP"
+  ];
+  globalThis.fetch = async (url, options) => {
+    assert.equal(new URL(url).origin, env.ORIGIN);
+    for (const name of [...spoofed, "Connection"]) assert.equal(options.headers.has(name), false, name);
+    assert.deepEqual([...options.headers], [["accept", "text/html, */*;q=0.8"], ["x-test", "keep"]]);
+    return new Response("ok");
+  };
+  try {
+    for (const method of ["GET", "HEAD"]) {
+      const response = await worker.fetch(new Request("https://site.example//attacker.example/path", {
+        method,
+        headers: {
+          ...Object.fromEntries(spoofed.map(name => [name, "192.0.2.10"])),
+          Connection: "x-NoMiNaTeD-iP", "X-Test": "keep"
+        }
+      }), env);
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), method === "HEAD" ? "" : "ok");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("write methods are rejected before local routing or origin access", async () => {
   for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
     for (const path of ["/page", "/.well-known/health", "/auth.md"]) {
