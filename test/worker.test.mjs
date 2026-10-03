@@ -293,6 +293,49 @@ test("Markdown conversion handles formatting, nested markup, links, and lists", 
   assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
 });
 
+test("Markdown rejects unsupported, obfuscated, and malformed destinations", async () => {
+  for (const destination of [
+    "javascript:alert(1)", "JaVaScRiPt:alert(1)", "java&#115;cript:alert(1)",
+    "java&#x73;cript:alert(1)", "javascript&colon;alert(1)", "java&Tab;script:alert(1)",
+    "java&NewLine;script:alert(1)", "java&#9script:alert(1)", "java\nscript:alert(1)",
+    "&#106;&#97;vascript:alert(1)", "javascript&#x3a;alert(1)", "javascript&#58alert(1)",
+    "vbscript:msgbox(1)", "data:text/html,unsafe", "file:///etc/passwd",
+    "blob:https://site.example/id", "mailto:user@example.com", "tel:123", "ftp://site.example",
+    "https://[invalid", "http://", "https://example.com:99999/", "javascript&amp;colon;alert(1)",
+    "https://example.com/&unknown;", "/literal&amp;#x3a;", ""
+  ]) {
+    assert.equal(await convertMd(`<main><a href="${destination}">Safe <b>label</b></a><img src="${destination}" alt="Safe alt"></main>`, "https://site.example/page"), "Safe labelSafe alt", destination);
+  }
+});
+
+test("Markdown destinations use parser attributes, URL normalization and delimiter encoding", async () => {
+  const cases = [
+    ["/relative?q=one&amp;two=2#part", "https://site.example/relative?q=one%26two=2#part"],
+    ["../路径?词=🙂#片", "https://site.example/%E8%B7%AF%E5%BE%84?%E8%AF%8D=%F0%9F%99%82#%E7%89%87"],
+    ["#fragment", "https://site.example/dir/page#fragment"],
+    ["HtTpS://EXAMPLE.com/path", "https://example.com/path"],
+    ["http://example.com/path", "http://example.com/path"],
+    ["//cdn.example/image.png", "https://cdn.example/image.png"],
+    ["/a&#40;b&#41;&#91;c&#93; space", "https://site.example/a%28b%29%5Bc%5D%20space"],
+    ["/query?q=&quot;quoted&quot;&amp;x=1", "https://site.example/query?q=%22quoted%22%26x=1"],
+    ["/back\\slash", "https://site.example/back/slash"]
+  ];
+  for (const [destination, expected] of cases) {
+    assert.equal(await convertMd(`<main><a data-href="javascript:bad" title="href='javascript:bad'" href="${destination}">世界 🙂</a><img src="${destination}" alt="图片"></main>`, "https://site.example/dir/page"),
+      `[世界 🙂](${expected})![图片](${expected})`, destination);
+  }
+  assert.equal(await convertMd("<main><a HREF=/valid>Unquoted</a><IMG SRC=/pic ALT=Alt></main>", "https://site.example"), "[Unquoted](https://site.example/valid)![Alt](https://site.example/pic)");
+});
+
+test("Markdown labels and alt text cannot inject link syntax after entity decoding", async () => {
+  const label = "click&#93;&#40;javascript:evil&#41;&#91;x\\ &amp;#93; &lt;tag&gt;";
+  const expected = "click\\]\\(javascript:evil\\)\\[x\\\\ \\&\\#93; &lt;tag&gt;";
+  const actual = await convertMd(`<main><a href="/safe">${label}</a><img src="/safe" alt="${label}"></main>`, "https://site.example");
+  assert.equal(actual, `[${expected}](https://site.example/safe)![${expected}](https://site.example/safe)`);
+  assert.equal(await convertMd('<main><a href="javascript:bad">x](data:bad)[y</a><img src="data:bad" alt="x](data:bad)[y"></main>', "https://site.example"), "x\\]\\(data:bad\\)\\[yx\\]\\(data:bad\\)\\[y");
+  assert.equal(await convertMd('<main><a href="/safe">line&#10;break&#127;end</a></main>', "https://site.example"), "[line break end](https://site.example/safe)");
+});
+
 test("Markdown conversion strips tags and escapes remaining angle brackets", async () => {
   const html = "<main><p><span>Nested text</span>: 2 < 3 &amp;&amp; 4 &gt; 1.</p><!-- removed -->unfinished <script</main>";
   assert.equal(
