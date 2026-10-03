@@ -112,7 +112,7 @@ async function botAuth(req, env) {
     "Access-Control-Allow-Origin": "*",
     "Signature-Agent": '"' + o + '"',
     "Signature-Input": si,
-    "Signature": "sig1::" + sg + ":",
+    "Signature": "sig1=:" + sg + ":",
     "Cache-Control": PUBLIC_CACHE_CONTROL
   } });
 }
@@ -369,6 +369,17 @@ function secHdrs(h, n) {
 }
 __name(secHdrs, "secHdrs");
 __name2(secHdrs, "secHdrs");
+function varyAccept(h) {
+  var vary = h.get("Vary");
+  if (!vary) {
+    h.set("Vary", "Accept");
+  } else if (vary.trim() !== "*" && !vary.split(",").some(function(value) { return value.trim().toLowerCase() === "accept"; })) {
+    h.set("Vary", vary + ", Accept");
+  }
+  return h;
+}
+__name(varyAccept, "varyAccept");
+__name2(varyAccept, "varyAccept");
 function webmcp(n) {
   return '<script nonce="' + n + '">(function(){if(navigator.modelContext&&navigator.modelContext.provideContext){navigator.modelContext.provideContext({tools:[{name:"get_site_info",description:"Get information about hussamfaroug.com",inputSchema:{type:"object",properties:{}},execute:async function(){return{name:"hussamfaroug.com",url:location.origin};}}]});}})();<\/script>';
 }
@@ -473,13 +484,17 @@ function convertMd(html, url) {
   b = b.replace(/<[^>]+>/g, "");
   b = mdDec(b);
   b = b.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
-  return md + b;
+  return (md + b).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 __name(convertMd, "convertMd");
 __name2(convertMd, "convertMd");
 var worker_default = {
   async fetch(request, env) {
-    return handleRequest(request, env);
+    var response = await handleRequest(request, env);
+    if (request.method === "HEAD") {
+      return new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers });
+    }
+    return response;
   },
   async scheduled(event, env) {
     return handleScheduled(event, env);
@@ -500,10 +515,6 @@ async function handleScheduled(event, env) {
 }
 
 async function handleRequest(req, env) {
-  if (req.method === "HEAD") {
-    return new Response(null, { status: 200, headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=3600" } });
-  }
-
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
       "Access-Control-Allow-Origin": "*",
@@ -550,7 +561,9 @@ async function handleRequest(req, env) {
   }
   var ct = r.headers.get("Content-Type") || "";
   if (ct.indexOf("text/html") === -1 || r.body === null) {
-    return new Response(r.body, { status: r.status, headers: r.headers });
+    var passthroughHeaders = new Headers(r.headers);
+    if (req.method === "HEAD" && ct.indexOf("text/html") !== -1) varyAccept(passthroughHeaders);
+    return new Response(r.body, { status: r.status, headers: passthroughHeaders });
   }
   if (accept.indexOf("text/markdown") !== -1) {
     var htmlText = await r.text();
@@ -559,7 +572,7 @@ async function handleRequest(req, env) {
     return new Response(md, { headers: {
       "Content-Type": "text/markdown; charset=utf-8",
       "x-markdown-tokens": String(tokens),
-      "Vary": "accept",
+      "Vary": "Accept",
       "Content-Signal": "ai-train=yes, search=yes, ai-input=yes",
       "Cache-Control": "public, max-age=3600",
       "Access-Control-Allow-Origin": "*"
@@ -568,8 +581,13 @@ async function handleRequest(req, env) {
   var nonceBytes = crypto.getRandomValues(new Uint8Array(24));
   var n = b64u(nonceBytes);
   var ws = webmcp(n);
-  var injected = false;
   var transformed = new HTMLRewriter()
+    .on("script[src]", {
+      element(el) {
+        var src = el.getAttribute("src");
+        if (src && /\.webmcp\/bridge\.js/i.test(src)) el.remove();
+      }
+    })
     .on("head", {
       element(el) {
         el.append('<link rel="service-meta" href="' + o + '/.well-known/mcp/server-card.json" />', { html: true });
@@ -581,27 +599,32 @@ async function handleRequest(req, env) {
     .on("body", {
       element(el) {
         el.append(ws, { html: true });
-        injected = true;
       }
     })
     .transform(r);
   var reader = transformed.body.getReader();
-  var chunks = [];
-  for (;;) {
-    var _a;
-    var { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  var bodyBytes = new Uint8Array(chunks.reduce(function(acc, c) { return acc + c.length; }, 0));
-  var offset = 0;
-  for (var _i = 0; chunks.length > _i; _i++) {
-    bodyBytes.set(chunks[_i], offset);
-    offset += chunks[_i].length;
-  }
+  var body = new ReadableStream({
+    async pull(controller) {
+      try {
+        var chunk = await reader.read();
+        if (chunk.done) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(chunk.value);
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    }
+  });
   var respHeaders = new Headers(transformed.headers);
   secHdrs(respHeaders, n);
   respHeaders.set("Link", linkHdr(o));
-  return new Response(bodyBytes, { status: transformed.status, headers: respHeaders });
+  respHeaders.delete("Content-Length");
+  varyAccept(respHeaders);
+  return new Response(body, { status: transformed.status, headers: respHeaders });
 }
 export { worker_default as default };
