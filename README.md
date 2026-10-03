@@ -115,7 +115,8 @@ escaped label text; invalid images become escaped alt text. Attribute decoding
 supports decimal/hex numeric references and the named amp, lt, gt, quot, apos,
 nbsp, colon, Tab, and NewLine entities. Unresolved destination entity references
 are rejected conservatively rather than passed through. Controls are rejected;
-URL delimiters and ampersands are percent-encoded. Labels are Markdown-escaped,
+parentheses are percent-encoded and brackets Markdown-escaped (including IPv6
+hosts). Structural query ampersands remain intact. Labels are Markdown-escaped,
 and generated links are restored after the prose entity-decoding pass so it
 cannot resurrect rejected schemes or link syntax.
 
@@ -171,14 +172,18 @@ per small sample and two per near-limit sample. Each output was compared exactly
 
 | Input UTF-8 bytes | Before median (range), ms | After median (range), ms | Output bytes |
 |---|---|---|---|
-| 5,293 | 1.485 (1.265–2.130) | 1.293 (1.227–1.715) | 4,748 |
-| 1,048,533 | 244.044 (229.133–254.532) | 195.613 (189.288–201.876) | 943,664 |
+| 5,101 | 1.302 (1.192–2.141) | 1.337 (1.199–1.874) | 4,604 |
+| 1,048,565 | 230.551 (223.380–245.197) | 191.556 (184.392–197.035) | 949,628 |
 
 Identical before/after SHA-256:
-small `b2a727920febfc5aeb10da501b61385820ec20ba723b4e3c3c5d798d10601b7a`;
-near-limit `838a5cc33cf591e02259455db769ea6b2aa7aefbec23273aadccdd79a1d1dc3f`.
+small `3fb978d6526a90c4764fb42947a64a95d06b52181faa3039f052ae69808aa9d1`;
+near-limit `0e5f0d85600341a081f19741f67a849c69265dfbd32502884386f6ded11e0817`.
 These are local corpus-specific measurements, not promised edge CPU savings.
-Further pass fusion is deferred. To reproduce from this repository after `npm ci`
+There is no demonstrated small-document improvement; its timing ranges overlap.
+The final paired corpus excludes multi-parameter queries and linked images,
+whose intentional correctness fixes differ from the Phase 3.3 baseline and
+are covered by separate regressions. Further pass fusion is deferred.
+To reproduce from this repository after `npm ci`
 (baseline is the Phase 3.3 commit; fetch its history if needed):
 
 ```sh
@@ -206,7 +211,7 @@ globalThis.HTMLRewriter = class {
     }};
   }
 };
-const unit = '<p>Résumé 世界 🙂 and ordinary prose with <strong>nested text</strong>, <a href="/path?q=1&amp;x=2">a link</a>, and <img src="/pic.png" alt="picture">.</p><pre>if (left &lt; right) return 1;</pre><nav>removed</nav>';
+const unit = '<p>Résumé 世界 🙂 and ordinary prose with <strong>nested text</strong>, <a href="/path?q=1">a link</a>, and <img src="/pic.png" alt="picture">.</p><pre>if (left &lt; right) return 1;</pre><nav>removed</nav>';
 for (const [name, count, batch] of [['small', 24, 25], ['near-limit', Math.floor((1048576 - 13) / Buffer.byteLength(unit)), 2]]) {
   const html = '<main>' + unit.repeat(count) + '</main>';
   const output = await before(html, 'https://site.example/page');

@@ -302,7 +302,7 @@ test("Markdown rejects unsupported, obfuscated, and malformed destinations", asy
     "vbscript:msgbox(1)", "data:text/html,unsafe", "file:///etc/passwd",
     "blob:https://site.example/id", "mailto:user@example.com", "tel:123", "ftp://site.example",
     "https://[invalid", "http://", "https://example.com:99999/", "javascript&amp;colon;alert(1)",
-    "https://example.com/&unknown;", "/literal&amp;#x3a;", ""
+    "https://example.com/&unknown;", "https://example.com/&constructor;", "/literal&amp;#x3a;", ""
   ]) {
     assert.equal(await convertMd(`<main><a href="${destination}">Safe <b>label</b></a><img src="${destination}" alt="Safe alt"></main>`, "https://site.example/page"), "Safe labelSafe alt", destination);
   }
@@ -310,14 +310,15 @@ test("Markdown rejects unsupported, obfuscated, and malformed destinations", asy
 
 test("Markdown destinations use parser attributes, URL normalization and delimiter encoding", async () => {
   const cases = [
-    ["/relative?q=one&amp;two=2#part", "https://site.example/relative?q=one%26two=2#part"],
+    ["/relative?q=one&amp;two=2#part", "https://site.example/relative?q=one&two=2#part"],
     ["../路径?词=🙂#片", "https://site.example/%E8%B7%AF%E5%BE%84?%E8%AF%8D=%F0%9F%99%82#%E7%89%87"],
     ["#fragment", "https://site.example/dir/page#fragment"],
     ["HtTpS://EXAMPLE.com/path", "https://example.com/path"],
     ["http://example.com/path", "http://example.com/path"],
     ["//cdn.example/image.png", "https://cdn.example/image.png"],
-    ["/a&#40;b&#41;&#91;c&#93; space", "https://site.example/a%28b%29%5Bc%5D%20space"],
-    ["/query?q=&quot;quoted&quot;&amp;x=1", "https://site.example/query?q=%22quoted%22%26x=1"],
+    ["/a&#40;b&#41;&#91;c&#93; space", "https://site.example/a%28b%29\\[c\\]%20space"],
+    ["/query?q=&quot;quoted&quot;&amp;x=1", "https://site.example/query?q=%22quoted%22&x=1"],
+    ["https://[2001:db8::1]/?a=1&amp;b=2", "https://\\[2001:db8::1\\]/?a=1&b=2"],
     ["/back\\slash", "https://site.example/back/slash"]
   ];
   for (const [destination, expected] of cases) {
@@ -325,6 +326,18 @@ test("Markdown destinations use parser attributes, URL normalization and delimit
       `[世界 🙂](${expected})![图片](${expected})`, destination);
   }
   assert.equal(await convertMd("<main><a HREF=/valid>Unquoted</a><IMG SRC=/pic ALT=Alt></main>", "https://site.example"), "[Unquoted](https://site.example/valid)![Alt](https://site.example/pic)");
+  const markdown = await convertMd('<main><a href="https://[2001:db8::1]/?a=1&amp;b=2">Link</a></main>', "https://site.example");
+  const destination = new URL(markdown.slice("[Link](".length, -1).replace(/\\([[\]])/g, "$1"));
+  assert.equal(destination.hostname, "[2001:db8::1]");
+  assert.deepEqual([...destination.searchParams], [["a", "1"], ["b", "2"]]);
+});
+
+test("Markdown preserves validated linked images without escaping their generated syntax", async () => {
+  assert.equal(await convertMd('<main><a href="/target">Before <img src="/img.png" alt="x](bad)[y"> after</a></main>', "https://site.example"),
+    "[Before ![x\\]\\(bad\\)\\[y](https://site.example/img.png) after](https://site.example/target)");
+  assert.equal(await convertMd('<main><a href="/target"><img src="/img.png" alt="Image"></a></main>', "https://site.example"),
+    "[![Image](https://site.example/img.png)](https://site.example/target)");
+  assert.equal(await convertMd('<main><a href="javascript:bad"><img src="data:bad" alt="x](bad)[y"></a></main>', "https://site.example"), "x\\]\\(bad\\)\\[y");
 });
 
 test("Markdown labels and alt text cannot inject link syntax after entity decoding", async () => {

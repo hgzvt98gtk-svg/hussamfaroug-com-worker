@@ -81,8 +81,9 @@ function mdAttribute(value) {
   });
 }
 
-function mdLabel(value) {
-  return mdAttribute(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().replace(/[\\`*_[\]{}()!#&]/g, "\\$&");
+function mdLabel(value, trim = true) {
+  var label = mdAttribute(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ");
+  return (trim ? label.trim() : label).replace(/[\\`*_[\]{}()!#&]/g, "\\$&");
 }
 
 function mdRu(href, base) {
@@ -92,7 +93,7 @@ function mdRu(href, base) {
   try {
     var destination = new URL(href, base);
     if (!["http:", "https:"].includes(destination.protocol)) return null;
-    return destination.href.replace(/[\\()[\]\s<>&]/g, char => encodeURIComponent(char).replace(/[()]/g, value => "%" + value.charCodeAt(0).toString(16).toUpperCase()));
+    return destination.href.replace(/[\\()\s<>]/g, char => encodeURIComponent(char).replace(/[()]/g, value => "%" + value.charCodeAt(0).toString(16).toUpperCase())).replace(/[[\]]/g, "\\$&");
   } catch {
     return null;
   }
@@ -155,7 +156,7 @@ export async function convertMd(html, url) {
     return "\n\n> " + mdClean(content) + "\n\n";
   });
   body = body.replace(mdPatterns.anchor, function(_, quote, href, content) {
-    var label = mdLabel(mdClean(content).replace(markerPattern, (_, index) => protectedText[Number(index)]));
+    var label = mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false)).join("");
     return protect(href ? "[" + label + "](" + href + ")" : label);
   });
   body = body.replace(mdPatterns.list, function(_, type, content) {
