@@ -506,6 +506,21 @@ test("Markdown conversion handles larger HTML documents", async () => {
   assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
 });
 
+test("Markdown text slicing preserves long runs, comparisons, and incomplete tags", async () => {
+  const text = "Résumé 世界 🙂 < 3 &amp; ".repeat(1000);
+  const html = `<main><p>${text}<span title="quoted > delimiter">end</span>unfinished <tag</p></main>`;
+  assert.equal(await convertMd(html, "https://site.example"), text.replaceAll("<", "&lt;").replaceAll("&amp;", "&") + "endunfinished &lt;tag");
+});
+
+test("Markdown shared patterns remain deterministic across concurrent conversions", async () => {
+  const documents = Array.from({ length: 24 }, (_, index) => ({
+    html: `<main><h2>Heading ${index}</h2><ul><li>One</li><li>Two</li></ul><p><a href="/${index}">Link</a> <strong>bold</strong></p></main>`,
+    expected: `## Heading ${index}\n\n- One\n- Two\n\n[Link](https://site.example/${index}) **bold**`
+  }));
+  const output = await Promise.all(documents.map(({ html }) => convertMd(html, "https://site.example")));
+  assert.deepEqual(output, documents.map(({ expected }) => expected));
+});
+
 test("Markdown preserves status, restrictive caching, variation, and safe representation headers", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response("<main><p>Missing</p></main>", {
