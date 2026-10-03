@@ -46,6 +46,7 @@ jobs:
 
       - name: Re-enable observability
         run: |
+          : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
           curl -fsS -X PATCH "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/hussamfaroug-com/script-settings" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             -H "Content-Type: application/json" \
