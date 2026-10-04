@@ -14,12 +14,38 @@ var mdPatterns = {
 };
 var attributeEntities = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", colon: ":", Tab: "\t", NewLine: "\n" };
 var unsafeDestination = /[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i;
+var mdDecStats;
 
-function mdDec(value) {
-  return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(match, decimal) {
+export function resetMdDecStats() {
+  mdDecStats = { callCount: 0, totalTime: 0, maxTime: 0, callsBySize: [] };
+}
+
+export function getMdDecStats() {
+  return mdDecStats ? {
+    ...mdDecStats,
+    callsBySize: mdDecStats.callsBySize.map(call => ({ ...call }))
+  } : null;
+}
+
+export function disableMdDecStats() {
+  mdDecStats = undefined;
+}
+
+export function mdDec(value) {
+  var stats = mdDecStats;
+  var startedAt = stats ? performance.now() : 0;
+  var result = value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(match, decimal) {
     var codePoint = Number(decimal);
     return codePoint <= 1114111 ? String.fromCodePoint(codePoint) : match;
   }).replace(/&amp;/g, "&");
+  if (stats) {
+    var elapsed = performance.now() - startedAt;
+    stats.callCount++;
+    stats.totalTime += elapsed;
+    stats.maxTime = Math.max(stats.maxTime, elapsed);
+    stats.callsBySize.push({ size: value.length, elapsed });
+  }
+  return result;
 }
 
 function mdStripTags(html) {
