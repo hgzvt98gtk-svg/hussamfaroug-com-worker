@@ -295,20 +295,28 @@ curl -i https://hussamfaroug.com/app.js
 
 ---
 
-## 8. Retired OAuth/OIDC/MCP Endpoints
+## 8. OAuth/OIDC/MCP Discovery and Retired Services
 
-**Goal:** Verify old service endpoints return 404 (not advertising deprecated services).
+**Goal:** Verify Phase 1 discovery metadata returns JSON while retired services remain unavailable.
 
 ```bash
-# Test 8.1: OAuth endpoint
+# Test 8.1: OAuth discovery
 curl -i https://hussamfaroug.com/.well-known/oauth-authorization-server
 
-# Expected: HTTP 404
+# Expected: HTTP 200, Content-Type: application/json,
+# Cache-Control: public, max-age=3600, Access-Control-Allow-Origin: *
 
-# Test 8.2: OIDC endpoint
+# Test 8.2: OIDC discovery
 curl -i https://hussamfaroug.com/.well-known/openid-configuration
 
-# Expected: HTTP 404
+# Expected: HTTP 200, same JSON/cache/CORS headers as OAuth discovery
+
+# Protected resource and browser MCP discovery
+curl -i https://hussamfaroug.com/.well-known/oauth-protected-resource
+curl -i https://hussamfaroug.com/.well-known/mcp/server-card.json
+
+# Expected: HTTP 200, same JSON/cache/CORS headers
+# MCP transport is browser-only, not an HTTP MCP service
 
 # Test 8.3: MCP endpoint
 curl -i https://hussamfaroug.com/.well-known/mcp
@@ -321,6 +329,9 @@ curl -i https://hussamfaroug.com/.well-known/api-catalog
 # Expected: HTTP 200, JSON with implemented services (WebMCP, etc.)
 ```
 
+Discovery is metadata only: a separate provider is required for OAuth token
+issuance and validation. Do not treat discovery success as authentication readiness.
+
 ---
 
 ## 9. Auth.md Endpoint
@@ -331,7 +342,9 @@ curl -i https://hussamfaroug.com/.well-known/api-catalog
 curl -i https://hussamfaroug.com/auth.md
 
 # Expected: HTTP 200, Content-Type: text/markdown or text/plain
-# Body should contain documentation about auth/discovery (not OAuth/OIDC services)
+# Body starts with # Auth.md and documents OAuth/OIDC registration,
+# browser MCP discovery, HTTP message signature verification, and registration contact.
+# It must explain that Phase 1 does not implement token issuance or validation.
 ```
 
 ---
@@ -525,7 +538,7 @@ echo "🔍 Cache Control (with auth)"
 curl -s -o /dev/null -I -w "Cache-Control: %{header{Cache-Control}}\n" "$ORIGIN" \
   -H "Authorization: Bearer test" -H "Accept: text/html" || RESULT=1
 
-echo "🔍 Retire OAuth Endpoints"
+echo "🔍 OAuth Discovery (expected HTTP 200)"
 curl -s -o /dev/null -w "OAuth endpoint HTTP %{http_code}\n" "$ORIGIN/.well-known/oauth-authorization-server"
 
 if [ $RESULT -eq 0 ]; then
@@ -558,4 +571,3 @@ Save as `verify.sh`, run with `bash verify.sh`.
 - **Tests Passed:** _____ / 15 sections
 - **Issues Found:** _______________
 - **Status:** ☐ Ready for production  ☐ Rollback needed  ☐ Investigate further
-

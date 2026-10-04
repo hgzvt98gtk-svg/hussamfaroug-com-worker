@@ -16,14 +16,17 @@ export const IDENTITY_HEADERS = Object.freeze({
 });
 // These are the retired route families handled by metadata.js/discovery.js.
 export const RETIRED_PATHS = Object.freeze([
-  "/.well-known/oauth-authorization-server",
-  "/.well-known/oauth-protected-resource",
-  "/.well-known/openid-configuration",
   "/.well-known/mcp",
   "/.well-known/mcp.json",
   "/.well-known/agent.json",
   "/a2a", "/mcp", "/oauth", "/token",
   "/agent/auth", "/agent/revoke", "/agent/claims"
+]);
+export const DISCOVERY_PATHS = Object.freeze([
+  "/.well-known/openid-configuration",
+  "/.well-known/oauth-authorization-server",
+  "/.well-known/oauth-protected-resource",
+  "/.well-known/mcp/server-card.json"
 ]);
 const CACHE_HEADERS = [
   "cache-control", "cdn-cache-control", "cloudflare-cdn-cache-control", "surrogate-control"
@@ -102,10 +105,20 @@ export function checkResponse(spec, response, text) {
   if (spec.auth && response.status === 200) {
     for (const phrase of [
       /public, read-only/i, /no credentials or bearer tokens are required/i,
-      /no credential registration, OAuth authorization server, OpenID Connect provider/i,
+      /Phase 1 publishes discovery metadata only/i,
       /not an HTTP service/i, /does not grant access or authenticate visitors/i
     ]) {
       if (!phrase.test(text)) issues.push(`auth.md is missing descriptive statement ${phrase.source}`);
+    }
+  }
+  if (spec.discovery && response.status === 200) {
+    if (response.headers.get("cache-control") !== "public, max-age=3600") issues.push("discovery metadata lacks public one-hour caching");
+    if (response.headers.get("access-control-allow-origin") !== "*") issues.push("discovery metadata lacks public CORS");
+    try {
+      const data = JSON.parse(text);
+      if (!data || typeof data !== "object" || Array.isArray(data)) issues.push("discovery metadata is not a JSON object");
+    } catch {
+      issues.push("discovery metadata is not valid JSON");
     }
   }
   return issues;
@@ -194,6 +207,7 @@ export async function runSmoke({ fetchImpl = fetch, dns = { lookup, resolve4 } }
     { path: "/robots.txt", type: "text/plain", method: "GET", publicMetadata: true },
     { path: "/robots.txt", type: "text/plain", method: "HEAD", identity: true, publicMetadata: true },
     { path: "/auth.md", type: "text/markdown", method: "GET", auth: true, publicMetadata: true },
+    ...DISCOVERY_PATHS.map(path => ({ path, type: "application/json", method: "GET", discovery: true, publicMetadata: true })),
     ...RETIRED_PATHS.map(path => ({ path, method: "GET", retired: true }))
   );
   // A fixed static candidate avoids fetching arbitrary URLs from deployed HTML.
