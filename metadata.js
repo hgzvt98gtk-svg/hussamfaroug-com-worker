@@ -24,7 +24,7 @@ export function authMd(origin) {
     "## Disclaimer",
     "",
     "**Important:** This Worker does not implement OAuth token issuance, an OpenID Connect provider, or automated agent registration.",
-    "The advertised authorize, token, and jwks endpoints do not function; do not attempt to authenticate through them. No registration, claim, or revocation API exists, so the authorization server metadata intentionally omits an agent_auth block.",
+    "The advertised authorize, token, and jwks endpoints do not function; do not attempt to authenticate through them. No registration, claim, or revocation API exists. The agent_auth block links manual registration instructions, not an automated registration endpoint.",
     "Agent registration is manual only: email the contact below.",
     "",
     "## OpenID Connect / OAuth 2.0 registration",
@@ -34,6 +34,16 @@ export function authMd(origin) {
     "Phase 1 publishes discovery metadata only. This Worker does not implement an OAuth authorization server, OpenID Connect provider, token issuance, or token validation. The advertised authorize, token, and jwks paths require a separately configured provider before use.",
     "Before authenticating, contact the administrator to confirm provider availability and register your agent and redirect URIs. Once enabled, use the authorization code flow with the registered redirect URI and openid/profile scopes, then exchange the code at the token endpoint. Public clients use token endpoint authentication method none; no client secret is required. Prefer authorization code with PKCE over the advertised implicit flow.",
     "OAuth token verification must use the provider's jwks_uri and validate issuer, audience, signature, and expiry. HTTP message signature keys are not OAuth token verification keys.",
+    "",
+    "## Agent registration",
+    "",
+    "1. Read " + origin + "/.well-known/oauth-protected-resource and follow authorization_servers to " + origin + "/.well-known/oauth-authorization-server.",
+    "2. Follow agent_auth.register_uri to " + origin + "/auth.md#agent-registration for these manual instructions. This is a documentation URL: read it with GET; do not POST registration requests.",
+    "3. To coordinate registration, email mailto:" + CONTACT + " with your agent name, operator contact, intended use, requested scopes, and redirect URIs. Wait for the administrator to confirm provider availability before attempting authentication.",
+    "4. Continue reading public content without authentication. Do not send credentials to the advertised placeholder endpoints.",
+    "",
+    "Supported automated identity types: none (identity_types_supported is empty). Supported issued credential types: none (credential_types_supported is empty). Anonymous public reading does not register an agent or issue credentials.",
+    "Claim and revocation URLs are omitted because no claim or credential revocation service is implemented. Contact the administrator for manual registration changes or cancellation. Do not send secrets, access tokens, or private keys.",
     "",
     "## MCP tool discovery",
     "",
@@ -67,7 +77,12 @@ export function oauthAuthorizationServer(origin) {
     grant_types_supported: ["implicit", "authorization_code"],
     scopes_supported: ["openid", "profile"],
     response_types_supported: ["code", "token"],
-    token_endpoint_auth_methods_supported: ["none"]
+    token_endpoint_auth_methods_supported: ["none"],
+    agent_auth: {
+      register_uri: origin + "/auth.md#agent-registration",
+      identity_types_supported: [],
+      credential_types_supported: []
+    }
   });
 }
 

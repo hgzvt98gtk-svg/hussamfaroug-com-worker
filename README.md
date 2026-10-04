@@ -160,9 +160,13 @@ metadata only. **Important:** it does NOT implement:
 The advertised authorize, token, and JWKS endpoints do not function. To add real
 OAuth authentication, configure an external OAuth provider and update the
 discovery endpoints to point to that provider's actual endpoints. The
-authorization server metadata deliberately omits an `agent_auth` block because no
-registration, claim, credential, or revocation API exists; `/auth.md` opens with
-a disclaimer and documents manual registration by contacting the administrator.
+authorization server metadata includes an `agent_auth` block whose `register_uri`
+points to `/auth.md#agent-registration`, a GET-only manual registration guide,
+not a registration API. `identity_types_supported` and `credential_types_supported`
+are empty because no automated identity registration or credential issuance is
+supported. Claim and revocation URLs are omitted because those services do not
+exist. `/auth.md` opens with a disclaimer and documents manual registration by
+contacting the administrator.
 Public content still needs no credentials. A2A, HTTP MCP, and legacy credential
 service paths remain 404.
 
