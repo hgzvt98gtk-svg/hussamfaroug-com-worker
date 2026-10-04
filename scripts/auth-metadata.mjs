@@ -33,6 +33,7 @@ function originOf(value) {
   }
 }
 
+// Simplified GitHub-style anchor slug; sufficient for the plain-ASCII "Agent registration" heading.
 function headingSlug(text) {
   return text.trim().toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-");
 }

@@ -6,12 +6,12 @@ import { verifyDeployment } from "../scripts/verify-deployment.mjs";
 
 const site = "https://example.com";
 const responses = new Map([
-  ["/.well-known/openid-configuration", new Response(JSON.stringify({ issuer: site }))],
-  ["/.well-known/oauth-protected-resource", oauthProtectedResource(site)],
-  ["/.well-known/oauth-authorization-server", oauthAuthorizationServer(site)],
-  ["/.well-known/mcp/server-card.json", new Response(JSON.stringify({ serverInfo: { name: "test" } }))],
-  ["/auth.md", authMd(site)],
-  ["/", new Response("Worker healthy")]
+  ["/.well-known/openid-configuration", () => new Response(JSON.stringify({ issuer: site }))],
+  ["/.well-known/oauth-protected-resource", () => oauthProtectedResource(site)],
+  ["/.well-known/oauth-authorization-server", () => oauthAuthorizationServer(site)],
+  ["/.well-known/mcp/server-card.json", () => new Response(JSON.stringify({ serverInfo: { name: "test" } }))],
+  ["/auth.md", () => authMd(site)],
+  ["/", () => new Response("Worker healthy")]
 ]);
 
 test("deployment verifier checks Phase 1 endpoints and the healthy Worker path", async () => {
@@ -19,7 +19,7 @@ test("deployment verifier checks Phase 1 endpoints and the healthy Worker path",
   const report = await verifyDeployment("https://example.com/custom/path", {
     fetchImpl: async (url, options) => {
       requests.push({ url: url.href, options });
-      return responses.get(url.pathname);
+      return responses.get(url.pathname)();
     }
   });
 

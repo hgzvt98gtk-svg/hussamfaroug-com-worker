@@ -168,9 +168,10 @@ without registering) and `credential_types_supported` (top level and under
 `anonymous`) is `["none"]` because no credential is issued. Protected resource
 metadata lists `bearer_methods_supported: ["header"]` for checker compatibility;
 the site does not require or validate bearer tokens. Claim and revocation URLs
-are omitted because those services do not exist.
-`scripts/auth-metadata.mjs` holds the shared PRM -> authorization server ->
-`/auth.md` chain invariants used by the tests and the deployment verifier. `/auth.md` opens with a disclaimer and documents manual registration by
+are omitted because those services do not exist. `scripts/auth-metadata.mjs`
+holds the shared PRM -> authorization server -> `/auth.md` chain invariants
+used by the tests and the deployment verifier.
+`/auth.md` opens with a disclaimer and documents manual registration by
 contacting the administrator.
 Public content still needs no credentials. A2A, HTTP MCP, and legacy credential
 service paths remain 404.
