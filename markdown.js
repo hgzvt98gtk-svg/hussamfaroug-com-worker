@@ -119,7 +119,15 @@ export async function convertMd(html, url, onTiming, onPassTiming) {
     return marker + (protectedText.push(value) - 1) + "\u0000";
   }
   function join(parts) {
-    return parts.reduce((text, part) => text + (text.endsWith("`") && part.startsWith("`") ? " " : "") + part, "");
+    var chunks = [];
+    var previous = "";
+    for (var part of parts) {
+      if (!part) continue;
+      if (previous.endsWith("`") && part.startsWith("`")) chunks.push(" ");
+      chunks.push(part);
+      previous = part;
+    }
+    return chunks.join("");
   }
   function code(content, block) {
     var text = join(mdDec(mdStripTags(content).trim()).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
