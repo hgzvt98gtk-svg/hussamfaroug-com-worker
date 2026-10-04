@@ -15,14 +15,14 @@ var mdPatterns = {
 var attributeEntities = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", colon: ":", Tab: "\t", NewLine: "\n" };
 var unsafeDestination = /[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i;
 
-function mdDec(value) {
+function mdDecImpl(value) {
   return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(match, decimal) {
     var codePoint = Number(decimal);
     return codePoint <= 1114111 ? String.fromCodePoint(codePoint) : match;
   }).replace(/&amp;/g, "&");
 }
 
-function mdStripTags(html) {
+function mdStripTagsImpl(html) {
   var text = [];
   var textStart = 0;
   var i = 0;
@@ -70,10 +70,6 @@ function mdStripTags(html) {
   return text.join("");
 }
 
-function mdClean(html) {
-  return mdStripTags(html).replace(/\s+/g, " ").trim();
-}
-
 function mdAttribute(value) {
   return value.replace(/&(?:#(x[0-9a-f]+|\d+);?|([a-z][a-z0-9]*);)/gi, function(match, numeric, named) {
     if (!numeric) return Object.hasOwn(attributeEntities, named) ? attributeEntities[named] : match;
@@ -103,7 +99,31 @@ function mdRu(href, base) {
   }
 }
 
-export async function convertMd(html, url, onTiming) {
+export async function convertMd(html, url, onTiming, onProfile) {
+  // Optional diagnostic events are separate from request-path component metrics.
+  function begin(stage) {
+    if (!onProfile) return 0;
+    onProfile(stage, "start");
+    return performance.now();
+  }
+  function end(stage, started) {
+    if (onProfile) onProfile(stage, "end", performance.now() - started);
+  }
+  function mdDec(value) {
+    var started = begin("mdDec");
+    var result = mdDecImpl(value);
+    end("mdDec", started);
+    return result;
+  }
+  function mdStripTags(value) {
+    var started = begin("mdStripTags");
+    var result = mdStripTagsImpl(value);
+    end("mdStripTags", started);
+    return result;
+  }
+  function mdClean(value) {
+    return mdStripTags(value).replace(/\s+/g, " ").trim();
+  }
   // Keep generated Markdown out of the later prose tag-stripping and entity-decoding passes.
   var protectedText = [];
   var marker = "\u0000" + crypto.randomUUID() + ":";
@@ -112,7 +132,10 @@ export async function convertMd(html, url, onTiming) {
     return marker + (protectedText.push(value) - 1) + "\u0000";
   }
   function join(parts) {
-    return parts.reduce((text, part) => text + (text.endsWith("`") && part.startsWith("`") ? " " : "") + part, "");
+    var started = begin("join");
+    var result = parts.reduce((text, part) => text + (text.endsWith("`") && part.startsWith("`") ? " " : "") + part, "");
+    end("join", started);
+    return result;
   }
   function code(content, block) {
     var text = join(mdDec(mdStripTags(content).trim()).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
@@ -128,18 +151,31 @@ export async function convertMd(html, url, onTiming) {
     return protect(href ? "[" + label + "](" + href + ")" : label);
   }
   function containerText(content) {
+    var started = begin("containerText");
+    var result = containerTextImpl(content);
+    end("containerText", started);
+    return result;
+  }
+  function containerTextImpl(content) {
     // Convert anchors before container cleanup can discard their safety boundary.
+    var started = begin("container.anchor");
     content = content.replace(mdPatterns.anchor, anchor);
+    end("container.anchor", started);
+    started = begin("container.format");
     content = content.replace(mdPatterns.format, function(match, tag, inner) {
       if (inner === void 0) return " ";
       var text = containerText(inner);
       return protect(tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*");
     });
+    end("container.format", started);
     return join(mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false).replace(/\\&/g, "&")));
   }
+  var profileStarted = begin("title");
   var title = (html.match(mdPatterns.title) || [])[1] || "";
+  end("title", profileStarted);
   title = title.trim();
   var rewriterStartedAt = onTiming ? performance.now() : 0;
+  profileStarted = begin("rewriter");
   var body = await new HTMLRewriter()
     .on("script, style, head, header, nav, footer, aside, svg, meta, link", {
       element(el) {
@@ -166,29 +202,43 @@ export async function convertMd(html, url, onTiming) {
       }
     })
     .transform(new Response(html)).text();
+  end("rewriter", profileStarted);
   if (onTiming) onTiming("rewriter", performance.now() - rewriterStartedAt);
   var markdownStartedAt = onTiming ? performance.now() : 0;
+  profileStarted = begin("selection");
   var match = body.match(mdPatterns.main);
   if (match) body = match[2];
   else {
     match = body.match(mdPatterns.body);
     if (match) body = match[1];
   }
+  end("selection", profileStarted);
   var markdown = "";
   if (title) markdown += "# " + mdLabel(title).replace(/\\&/g, "&") + "\n\n";
+  profileStarted = begin("heading");
   body = body.replace(mdPatterns.heading, function(_, level, content) {
     return "\n\n" + "#".repeat(Number(level)) + " " + protect(containerText(content)) + "\n\n";
   });
+  end("heading", profileStarted);
+  profileStarted = begin("pre");
   body = body.replace(mdPatterns.pre, function(_, content) {
     return "\n\n" + code(content, true) + "\n\n";
   });
+  end("pre", profileStarted);
+  profileStarted = begin("code");
   body = body.replace(mdPatterns.code, function(_, content) {
     return code(content, false);
   });
+  end("code", profileStarted);
+  profileStarted = begin("blockquote");
   body = body.replace(mdPatterns.blockquote, function(_, content) {
     return "\n\n> " + protect(containerText(content)) + "\n\n";
   });
+  end("blockquote", profileStarted);
+  profileStarted = begin("anchor");
   body = body.replace(mdPatterns.anchor, anchor);
+  end("anchor", profileStarted);
+  profileStarted = begin("list");
   body = body.replace(mdPatterns.list, function(_, type, content) {
     var items = content.match(mdPatterns.listItem) || [];
     var ordered = type.toLowerCase() === "ol";
@@ -196,6 +246,8 @@ export async function convertMd(html, url, onTiming) {
       return (ordered ? index + 1 + ". " : "- ") + protect(containerText(item));
     }).join("\n") + "\n\n";
   });
+  end("list", profileStarted);
+  profileStarted = begin("format");
   body = body.replace(mdPatterns.format, function(match, tag, content) {
     if (content !== void 0) {
       var text = protect(containerText(content));
@@ -206,11 +258,16 @@ export async function convertMd(html, url, onTiming) {
     if (/^<\/p/i.test(match)) return "\n";
     return "\n";
   });
+  end("format", profileStarted);
+  var cleanupStarted = begin("cleanup");
   body = mdStripTags(body);
   body = body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\`[\]]/g, "\\$&")).join("");
   body = body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
+  profileStarted = begin("restore");
   body = join(body.split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
+  end("restore", profileStarted);
   var result = (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  end("cleanup", cleanupStarted);
   if (onTiming) onTiming("markdown", performance.now() - markdownStartedAt);
   return result;
 }

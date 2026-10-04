@@ -106,6 +106,31 @@ test("conversion profiling preserves output and reports separate rewriter and ge
   assert.ok(timings.every(([, ms]) => Number.isFinite(ms) && ms >= 0));
 });
 
+test("detailed Markdown diagnostics preserve output and balance nested stages", async () => {
+  const html = '<title>Title</title><main><h1><strong>Bold <em>nested</em></strong></h1><pre><code>&lt;code&gt;</code></pre><blockquote>Quote</blockquote><ul><li><a href="/page">Link</a></li></ul></main>';
+  const events = [];
+  const timings = [];
+  const profiled = await convertMd(html, testEnv.ORIGIN,
+    (stage, ms) => timings.push([stage, ms]),
+    (stage, phase, ms) => events.push({ stage, phase, ms }));
+  assert.equal(profiled, await convertMd(html, testEnv.ORIGIN));
+  assert.deepEqual(timings.map(([stage]) => stage), ["rewriter", "markdown"]);
+  const stack = [];
+  for (const event of events) {
+    if (event.phase === "start") stack.push(event.stage);
+    else {
+      assert.equal(stack.pop(), event.stage);
+      assert.ok(Number.isFinite(event.ms) && event.ms >= 0);
+    }
+  }
+  assert.deepEqual(stack, []);
+  for (const stage of ["title", "rewriter", "selection", "heading", "pre", "code",
+    "blockquote", "anchor", "list", "format", "containerText", "container.anchor",
+    "container.format", "mdStripTags", "mdDec", "join", "restore", "cleanup"]) {
+    assert.ok(events.some(event => event.stage === stage), stage);
+  }
+});
+
 test("metadata responses preserve content types and cache policies", async () => {
   assert.equal(worker.scheduled, undefined);
 
