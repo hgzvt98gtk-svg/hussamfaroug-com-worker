@@ -2,7 +2,8 @@ import { botAuth } from "./bot-auth.js";
 import { authMd, isLegacyDiscoveryPath, wellKnown } from "./metadata.js";
 import { convertMd } from "./markdown.js";
 import { b64u, discoveryHtml, linkHdr, secHdrs, varyAccept, webmcp } from "./response.js";
-import { fetchOrigin, prefersMarkdown, readHtml } from "./proxy.js";
+import { fetchOriginWithRetry, prefersMarkdown, readHtml } from "./proxy.js";
+import { checkRateLimit } from "./rate-limit.js";
 
 var encoder = new TextEncoder();
 
@@ -44,6 +45,15 @@ async function handleRequest(request, env, headOnly = false) {
       Allow: "GET, HEAD, OPTIONS", "Cache-Control": "no-store"
     } });
   }
+  var clientId = request.headers.get("cf-connecting-ip") || "unknown";
+  if (!checkRateLimit(clientId)) {
+    return new Response("Rate limit exceeded", { status: 429, headers: {
+      "Content-Type": "text/plain",
+      "Retry-After": "60",
+      "Cache-Control": "no-store",
+      "Access-Control-Allow-Origin": "*"
+    } });
+  }
   var url = new URL(request.url);
   var origin = url.origin;
   if (url.pathname.startsWith("/.well-known/") || isLegacyDiscoveryPath(url.pathname)) {
@@ -82,7 +92,7 @@ async function handleRequest(request, env, headOnly = false) {
   forwardedHeaders.set("Accept", "text/html, */*;q=0.8");
   var upstream;
   try {
-    upstream = await fetchOrigin(proxyUrl.href, forwardedHeaders, request.signal);
+    upstream = await fetchOriginWithRetry(proxyUrl.href, forwardedHeaders, request.signal, 1);
   } catch {
     console.error("origin fetch failed");
     return new Response("Origin unavailable", { status: 502, headers: {

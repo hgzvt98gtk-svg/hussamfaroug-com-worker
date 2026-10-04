@@ -20,28 +20,53 @@ export function cachedJson(data, options = {}) {
   });
 }
 
+// CSP helpers operate on an array of trimmed, non-empty directive strings.
+// Directive names are matched case-insensitively.
+export function parseCSPDirectives(cspHeader) {
+  if (!cspHeader) return [];
+  return cspHeader.split(";").map(directive => directive.trim()).filter(Boolean);
+}
+
+export function getDirectiveIndex(directives, directiveName) {
+  const name = directiveName.toLowerCase();
+  return directives.findIndex(directive => directive.split(/\s+/, 1)[0].toLowerCase() === name);
+}
+
+export function getDirectiveSources(directives, directiveName) {
+  const index = getDirectiveIndex(directives, directiveName);
+  return index < 0 ? [] : directives[index].split(/\s+/).slice(1);
+}
+
+// Replaces the directive's sources (deduplicated, order preserved) or appends it.
+// An existing directive keeps its original name spelling.
+export function setDirectiveSources(directives, directiveName, sources) {
+  const index = getDirectiveIndex(directives, directiveName);
+  const name = index >= 0 ? directives[index].split(/\s+/, 1)[0] : directiveName;
+  const directive = [name, ...new Set(sources)].join(" ");
+  if (index >= 0) directives[index] = directive;
+  else directives.push(directive);
+  return directives;
+}
+
+// Adds the Worker's nonce and Turnstile sources to the origin's effective script
+// directive without loosening it: script-src-elem wins over script-src; existing
+// sources are kept as-is; script-src is only created (inheriting default-src)
+// when neither exists.
+export function mergeWorkerScriptSources(cspHeader, workerSources) {
+  const directives = parseCSPDirectives(cspHeader);
+  const target = getDirectiveIndex(directives, "script-src-elem") >= 0 ? "script-src-elem" : "script-src";
+  const base = getDirectiveIndex(directives, target) >= 0
+    ? getDirectiveSources(directives, target)
+    : getDirectiveSources(directives, "default-src");
+  setDirectiveSources(directives, target, [...base, ...workerSources]);
+  return directives.join("; ");
+}
+
 export function secHdrs(headers, nonce) {
   const originCsp = headers.get("Content-Security-Policy");
-  if (originCsp) {
-    const directives = originCsp.split(";").map(directive => directive.trim()).filter(Boolean);
-    const directiveName = directive => directive.split(/\s+/, 1)[0].toLowerCase();
+  if (parseCSPDirectives(originCsp).length) {
     const workerSources = ["'nonce-" + nonce + "'", "https://challenges.cloudflare.com"];
-    let scriptDirectiveIndex = directives.findIndex(directive => directiveName(directive) === "script-src-elem");
-    if (scriptDirectiveIndex < 0) {
-      scriptDirectiveIndex = directives.findIndex(directive => directiveName(directive) === "script-src");
-    }
-    if (scriptDirectiveIndex >= 0) {
-      const sources = directives[scriptDirectiveIndex].split(/\s+/);
-      for (const source of workerSources) {
-        if (!sources.includes(source)) sources.push(source);
-      }
-      directives[scriptDirectiveIndex] = sources.join(" ");
-    } else {
-      const defaultDirective = directives.find(directive => directiveName(directive) === "default-src");
-      const defaultSources = defaultDirective ? defaultDirective.split(/\s+/).slice(1) : [];
-      directives.push(["script-src", ...new Set([...defaultSources, ...workerSources])].join(" "));
-    }
-    headers.set("Content-Security-Policy", directives.join("; "));
+    headers.set("Content-Security-Policy", mergeWorkerScriptSources(originCsp, workerSources));
   } else {
     headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'nonce-" + nonce + "' https://challenges.cloudflare.com ; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; upgrade-insecure-requests");
   }

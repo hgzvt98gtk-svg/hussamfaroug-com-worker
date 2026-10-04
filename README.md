@@ -36,7 +36,8 @@ You can also trigger a deploy manually from the **Actions** tab → **Run workfl
 - `hussamfaroug-com-worker.js` — the Worker code
 - `metadata.js`, `bot-auth.js`, `markdown.js`, and `response.js` — focused Worker modules
 - `discovery.js` — shared public resource links and browser-tool definition
-- `proxy.js` — Accept negotiation, bounded HTML reads, and origin request lifecycle
+- `proxy.js` — Accept negotiation, bounded HTML reads, and origin request lifecycle (including retry)
+- `rate-limit.js` — per-client request rate limiting
 
 ## Tests
 
@@ -80,6 +81,21 @@ Cloudflare can add or rewrite platform headers on subrequests after this filter;
 mocked fetch assertions verify only what the Worker passes to fetch. Validate the
 actual deployed origin headers and routing before trusting any client-IP field
 for authorization or rate limiting.
+
+Origin fetch failures (network errors and timeouts, not HTTP error statuses)
+are retried once after 100 ms; client cancellation stops retries. Exhausted
+retries return a generic non-cacheable 502 without logging origin errors or URLs.
+
+GET and HEAD requests are limited to 100 per minute per `CF-Connecting-IP`
+value (requests without it share an `unknown` bucket). Excess requests receive
+a non-cacheable 429 with `Retry-After: 60`. The limiter is in-memory and
+best-effort: state is per isolate, not global, and holds at most 10,000 clients.
+Use Cloudflare WAF rate limiting rules for globally enforced limits.
+
+HTML responses receive a Content-Security-Policy. When the origin sends one,
+the Worker nonce and Turnstile sources are added to `script-src-elem`, else
+`script-src`, else a new `script-src` inheriting `default-src`; existing
+sources are never removed. Missing or empty origin policies get a strict default.
 
 Origin requests are unconditional (no Range or conditional validator headers),
 request HTML when available, and have a 10-second timeout covering headers and

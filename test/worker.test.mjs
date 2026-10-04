@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 import { HTMLRewriter as WasmHTMLRewriter } from "html-rewriter-wasm";
 import worker from "../hussamfaroug-com-worker.js";
 import { botAuth } from "../bot-auth.js";
 import { convertMd } from "../markdown.js";
 import { MAX_HTML_BYTES } from "../proxy.js";
+import { resetRateLimits } from "../rate-limit.js";
 import MarkdownIt from "markdown-it";
 
 const markdownParser = new MarkdownIt({ html: true });
@@ -13,6 +14,9 @@ markdownParser.validateLink = () => true;
 const renderMarkdown = value => markdownParser.render(value);
 
 const testEnv = { ORIGIN: "https://hgzvt98gtk-svg-github-io.pages.dev" };
+
+// Tests share the "unknown" client bucket; isolate them from the rate limiter.
+beforeEach(() => resetRateLimits());
 
 globalThis.HTMLRewriter = class {
   constructor() {
@@ -718,6 +722,7 @@ test("identity cache policy covers GET/HEAD and every proxied representation", a
             };
             if (cache !== null) upstreamHeaders["Cache-Control"] = cache;
             if (identity === "Set-Cookie") upstreamHeaders["Set-Cookie"] = "session=credential-marker";
+            resetRateLimits();
             globalThis.fetch = async (_url, options) => {
               if (["aUtHoRiZaTiOn", "cOoKiE"].includes(identity)) assert.equal(options.headers.has(identity), false);
               else if (!["none", "Set-Cookie"].includes(identity)) assert.equal(options.headers.get(identity), "credential-marker");
