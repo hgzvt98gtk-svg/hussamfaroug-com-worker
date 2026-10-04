@@ -54,6 +54,58 @@ globalThis.HTMLRewriter = class {
   }
 };
 
+test("sampled Markdown requests record each component without altering tokens or content", async (t) => {
+  t.mock.method(Math, "random", () => 0);
+  t.mock.method(globalThis, "fetch", async () => new Response("<html><body><p>Sample</p></body></html>", {
+    headers: { "Content-Type": "text/html" }
+  }));
+  const before = getMetrics();
+  const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+    headers: { Accept: "text/markdown" }
+  }), testEnv);
+  const body = await response.text();
+  assert.equal(body, "Sample");
+  assert.equal(response.headers.get("x-markdown-tokens"), String(Math.ceil(new TextEncoder().encode(body).length / 4)));
+  const after = getMetrics();
+  for (const field of ["timingOrigin", "timingReadHtml", "timingConversion", "timingHeaders", "timingToken"]) {
+    assert.equal(after[field + "_samples"] - before[field + "_samples"], 1);
+    assert.ok(after[field + "_ms"] >= before[field + "_ms"]);
+  }
+});
+
+test("unsampled requests skip component timings; sampled HEAD skips conversion and tokens", async (t) => {
+  t.mock.method(Math, "random", () => 0.5);
+  t.mock.method(globalThis, "fetch", async () => new Response("<html><body>Sample</body></html>", {
+    headers: { "Content-Type": "text/html" }
+  }));
+  const before = getMetrics();
+  const request = method => new Request("https://hussamfaroug.com/page", { method, headers: { Accept: "text/markdown" } });
+  await (await worker.fetch(request("GET"), testEnv)).text();
+  const unsampled = getMetrics();
+  for (const field of ["timingOrigin", "timingReadHtml", "timingConversion", "timingHeaders", "timingToken"]) {
+    assert.equal(unsampled[field + "_samples"], before[field + "_samples"]);
+  }
+  Math.random.mock.mockImplementation(() => 0);
+  const response = await worker.fetch(request("HEAD"), testEnv);
+  assert.equal(await response.text(), "");
+  assert.equal(response.headers.has("x-markdown-tokens"), false);
+  const head = getMetrics();
+  assert.equal(head.timingOrigin_samples - before.timingOrigin_samples, 1);
+  assert.equal(head.timingHeaders_samples - before.timingHeaders_samples, 1);
+  for (const field of ["timingReadHtml", "timingConversion", "timingToken"]) {
+    assert.equal(head[field + "_samples"], before[field + "_samples"]);
+  }
+});
+
+test("conversion profiling preserves output and reports separate rewriter and generation stages", async () => {
+  const html = '<html><body><h2>Title</h2><a href="/page">Link</a></body></html>';
+  const timings = [];
+  const profiled = await convertMd(html, testEnv.ORIGIN, (component, ms) => timings.push([component, ms]));
+  assert.equal(profiled, await convertMd(html, testEnv.ORIGIN));
+  assert.deepEqual(timings.map(([component]) => component), ["rewriter", "markdown"]);
+  assert.ok(timings.every(([, ms]) => Number.isFinite(ms) && ms >= 0));
+});
+
 test("metadata responses preserve content types and cache policies", async () => {
   assert.equal(worker.scheduled, undefined);
 

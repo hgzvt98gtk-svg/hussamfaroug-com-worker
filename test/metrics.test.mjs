@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getMetrics, logMetrics, recordConversionTime, recordError, recordRequest, recordRetrySuccess } from "../metrics.js";
+import { getMetrics, logMetrics, recordConversionTime, recordError, recordRequest, recordRetrySuccess, recordTiming } from "../metrics.js";
 
 test("metrics report zero conversion latency when no conversion has completed", () => {
   const metrics = getMetrics();
@@ -48,4 +48,34 @@ test("logMetrics emits structured JSON and returns the same snapshot", () => {
   } finally {
     console.log = originalLog;
   }
+});
+
+test("component timings include sample counts and ignore invalid measurements", () => {
+  const before = getMetrics();
+  for (const [component, field] of [
+    ["origin", "timingOrigin"], ["readHtml", "timingReadHtml"], ["conversion", "timingConversion"],
+    ["headers", "timingHeaders"], ["tokens", "timingToken"]
+  ]) {
+    recordTiming(component, 2.5);
+    recordTiming(component, 0);
+    for (const invalid of [-1, NaN, Infinity, "10"]) recordTiming(component, invalid);
+    const after = getMetrics();
+    assert.equal(after[field + "_ms"] - before[field + "_ms"], 2.5);
+    assert.equal(after[field + "_samples"] - before[field + "_samples"], 2);
+  }
+  const snapshot = getMetrics();
+  for (const component of ["unknown", "__proto__", "constructor"]) recordTiming(component, 5);
+  const after = getMetrics();
+  for (const field of Object.keys(snapshot).filter(key => key.startsWith("timing"))) assert.equal(after[field], snapshot[field]);
+  assert.equal(after.timing_sample_rate, 0.01);
+});
+
+test("origin status failures and terminal fetch failures have distinct counters", () => {
+  const before = getMetrics();
+  recordError("origin");
+  recordError("retry");
+  const after = getMetrics();
+  assert.equal(after.errors_origin - before.errors_origin, 1);
+  assert.equal(after.errors_origin_fetch - before.errors_origin_fetch, 1);
+  assert.equal(after.errors_total - before.errors_total, 2);
 });

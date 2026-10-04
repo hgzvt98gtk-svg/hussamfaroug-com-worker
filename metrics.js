@@ -1,5 +1,11 @@
 const METRICS_LOG_REQUEST_INTERVAL = 1000;
 const METRICS_LOG_TIME_INTERVAL_MS = 5 * 60 * 1000;
+export const TIMING_SAMPLE_RATE = 0.01;
+const timingFields = {
+  origin: "timingOrigin", readHtml: "timingReadHtml", conversion: "timingConversion",
+  headers: "timingHeaders", tokens: "timingToken"
+};
+const timings = Object.fromEntries(Object.values(timingFields).flatMap(field => [[field + "_ms", 0], [field + "_samples", 0]]));
 
 const metrics = {
   startTime: Date.now(),
@@ -10,6 +16,7 @@ const metrics = {
   retrySuccesses: 0,
   retryFailures: 0,
   rateLimited: 0,
+  originErrors: 0,
   conversionErrors: 0,
   conversions: 0,
   totalConversionMs: 0,
@@ -35,6 +42,7 @@ export function recordError(errorType) {
   if (errorType === "retry") metrics.retryFailures++;
   if (errorType === "conversion") metrics.conversionErrors++;
   if (errorType === "rateLimit") metrics.rateLimited++;
+  if (errorType === "origin") metrics.originErrors++;
 }
 
 export function recordRetrySuccess() {
@@ -48,6 +56,13 @@ export function recordConversionTime(ms) {
   metrics.maxConversionMs = Math.max(metrics.maxConversionMs, ms);
 }
 
+export function recordTiming(component, ms) {
+  const field = timingFields[component];
+  if (typeof field !== "string" || !Number.isFinite(ms) || ms < 0) return;
+  timings[field + "_ms"] += ms;
+  timings[field + "_samples"]++;
+}
+
 export function getMetrics() {
   return {
     timestamp: new Date().toISOString(),
@@ -59,11 +74,15 @@ export function getMetrics() {
     errors_total: metrics.errors,
     errors_conversion: metrics.conversionErrors,
     errors_retry: metrics.retryFailures,
+    errors_origin: metrics.originErrors,
+    errors_origin_fetch: metrics.retryFailures,
     retries_successful: metrics.retrySuccesses,
     conversions_total: metrics.conversions,
     conversion_avg_ms: metrics.conversions > 0 ? Math.round(metrics.totalConversionMs / metrics.conversions) : 0,
     conversion_min_ms: metrics.minConversionMs === Infinity ? 0 : metrics.minConversionMs,
-    conversion_max_ms: metrics.maxConversionMs
+    conversion_max_ms: metrics.maxConversionMs,
+    timing_sample_rate: TIMING_SAMPLE_RATE,
+    ...timings
   };
 }
 
