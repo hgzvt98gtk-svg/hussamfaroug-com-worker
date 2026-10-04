@@ -243,6 +243,34 @@ NODE
 For a CPU profile, add `--cpu-prof --cpu-prof-dir=/tmp` before
 `--input-type=module`; keep profiling artifacts outside the repository.
 
+### Corrective paired benchmark (2026-10-04)
+
+The reproduction above was rerun on clean corrective code commit
+`47e6291ece0378587f1b67b45558e94bce2d9683`, versus full baseline
+`431c0b1ac17f6b82a7f0ed8042c32ed906a4c0ae`, on Node v22.23.3,
+Linux 6.17.0-1022-azure x86-64, AMD EPYC 9V74 (4 visible CPUs).
+Candidate `markdown.js` SHA-256:
+`7bb484bedd05d9a6c5eb9b76c16178b8e56aab4948745d9e97117d2465929c7d`.
+Same corpus, locked parser, buffered adapter, warmups and alternating samples
+as above; **every output compared equal**, with the same byte lengths and
+SHA-256 hashes listed in the historical section.
+
+| Input bytes | Baseline median (range), ms | Corrective median (range), ms |
+|---|---|---|
+| 5,101 | 1.042 (0.994–1.762) | 1.090 (0.995–1.507) |
+| 1,048,565 | 200.753 (197.851–212.588) | 178.187 (172.737–201.093) |
+
+No small-document improvement is demonstrated. A preceding working-tree run
+under concurrent agent activity had much wider overlapping ranges: small
+1.735 (1.267–5.910) versus 1.512 (1.220–4.640), near-limit
+430.524 (226.861–728.156) versus 470.826 (191.301–572.691) ms.
+This variability is why neither run is an edge CPU guarantee. The comparison
+includes corrective safety handling as well as allocation optimization;
+it does not isolate each change's cost. The near-limit input stays below 1 MiB,
+but conversion here does not benchmark the Worker read/cancellation path.
+Linked-image, query and adversarial context correctness is tested separately,
+not inferred from this corpus. There is no claimed 95% saving or deployed gain.
+
 ### Corrective integration investigation (2026-10-04)
 
 At investigation time `main` was
@@ -324,12 +352,21 @@ resolution limitation; authoritative/public DNS answers and live site behavior
 remain **unverified**, not established as broken. No resolver, DNS record or
 Cloudflare production setting was changed. Run the script outside this
 restricted network before release; before merge it observes the old deployment.
+Safe configuration inspection found one loopback nameserver with resolver
+options/search configured, and no HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY
+variables (upper/lowercase); no addresses, search domains or environment values
+were published. No security restriction was bypassed.
 
 Final local validation: **75 tests passed, 0 failed/skipped/cancelled**
 (`npm test`, Node v22.23.3; 66 top-level plus 9 nested tests), including seven
 smoke-script mock tests and rendered Markdown destination checks. No standalone
 lint/build command exists. Mock header capture establishes what fetch receives,
 not what Cloudflare later adds, and does not establish live origin header trust.
+The full suite was also rerun on committed corrective code
+`47e6291ece0378587f1b67b45558e94bce2d9683`; subsequent changes are documentation
+only. Changed-file secret scans were clean and CodeQL found zero alerts.
+Automated AI review was unavailable because its configured model was missing;
+a separate read-only corrective-diff review found no significant issues.
 
 ## Cron trigger
 
