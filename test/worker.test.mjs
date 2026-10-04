@@ -54,6 +54,41 @@ globalThis.HTMLRewriter = class {
   }
 };
 
+test("Markdown pass profiling preserves output and the existing stage callback", async () => {
+  const html = '<main><h2>Heading</h2><pre>block</pre><code>inline</code><blockquote>Quote</blockquote><a href="/safe">Link</a><ul><li>Item</li></ul><p><strong>Bold</strong></p></main>';
+  const stages = [];
+  const passes = [];
+  const profiled = await convertMd(html, testEnv.ORIGIN,
+    (name, ms) => stages.push([name, ms]), (name, ms) => passes.push([name, ms]));
+  assert.equal(profiled, await convertMd(html, testEnv.ORIGIN));
+  assert.equal(profiled, await convertMd(html, testEnv.ORIGIN, undefined, () => {}));
+  assert.deepEqual(stages.map(([name]) => name), ["rewriter", "markdown"]);
+  assert.deepEqual(passes.map(([name]) => name), [
+    "extract", "heading", "pre", "code", "blockquote", "anchor", "list", "format",
+    "stripTags", "decodeProse", "whitespace", "restoreProtected", "escapeOutput"
+  ]);
+  for (const [, ms] of [...stages, ...passes]) assert.ok(Number.isFinite(ms) && ms >= 0);
+});
+
+test("Markdown joining preserves adjacent code boundaries across empty and nonempty parts", async () => {
+  for (const [between, separator] of [["", " "], ["<span></span>", " "], [" ", " "], ["text", "text"]]) {
+    assert.equal(await convertMd(`<main><code>a</code>${between}<code>b</code></main>`, testEnv.ORIGIN),
+      "`a`" + separator + "`b`");
+  }
+  for (const tag of ["blockquote", "strong", "a href='/safe'"]) {
+    const closeTag = tag.split(" ")[0];
+    const markdown = await convertMd(`<main><${tag}><code>a</code><span></span><code>b</code></${closeTag}></main>`, testEnv.ORIGIN);
+    assert.equal((renderMarkdown(markdown).match(/<code>/g) || []).length, 2, markdown);
+  }
+});
+
+test("Markdown restores thousands of protected fragments without altering content", async () => {
+  const count = 4000;
+  const unit = "<p><code>a</code><span></span><code>b</code> &amp; &lt; [text]</p>";
+  assert.equal(await convertMd("<main>" + unit.repeat(count) + "</main>", testEnv.ORIGIN),
+    Array(count).fill("`a` `b` & &lt; \\[text\\]").join("\n\n"));
+});
+
 test("sampled Markdown requests record each component without altering tokens or content", async (t) => {
   t.mock.method(Math, "random", () => 0);
   t.mock.method(globalThis, "fetch", async () => new Response("<html><body><p>Sample</p></body></html>", {
