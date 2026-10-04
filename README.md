@@ -147,12 +147,24 @@ The MCP card describes the existing browser-only `get_site_info` WebMCP tool,
 not an HTTP MCP transport. `/auth.md` documents discovery, manual registration
 contact, and HTTP message signature verification.
 
-Discovery metadata does not implement authentication: a separate OAuth/OIDC
-provider must implement the advertised authorize, token, and JWKS endpoints
-before agents can obtain or validate tokens. The `agent_auth` registration URI
-points to instructions, not a registration API; its empty supported identity and
-credential lists indicate no automated issuance. Public content still needs no
-credentials. A2A, HTTP MCP, and legacy credential service paths remain 404.
+### OAuth/OIDC discovery scope
+
+The Worker publishes OAuth 2.0 and OpenID Connect discovery endpoints and
+metadata only. **Important:** it does NOT implement:
+
+- Token issuance
+- Authorization code flow
+- OpenID Connect provider
+- Automated agent registration
+
+The advertised authorize, token, and JWKS endpoints do not function. To add real
+OAuth authentication, configure an external OAuth provider and update the
+discovery endpoints to point to that provider's actual endpoints. The
+authorization server metadata deliberately omits an `agent_auth` block because no
+registration, claim, credential, or revocation API exists; `/auth.md` opens with
+a disclaimer and documents manual registration by contacting the administrator.
+Public content still needs no credentials. A2A, HTTP MCP, and legacy credential
+service paths remain 404.
 
 ## Observability and deployment verification
 
@@ -178,8 +190,9 @@ node scripts/verify-deployment.mjs
 node scripts/verify-deployment.mjs https://hussamfaroug.com
 ```
 
-The script checks the OAuth discovery document, MCP server card, `/auth.md`,
-and a healthy root request; it prints JSON and exits nonzero if checks fail.
+The script checks the OAuth discovery document, OAuth protected resource
+metadata, MCP server card, `/auth.md`, and a healthy root request without
+following redirects; it prints JSON and exits nonzero if checks fail.
 The root check confirms the Worker responds through its retry and rate-limit
 middleware, but does not force a transient origin failure or send a burst of
 requests to trigger the rate limit. It cannot observe metrics logging from the

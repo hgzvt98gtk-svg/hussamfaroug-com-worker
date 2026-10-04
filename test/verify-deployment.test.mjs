@@ -5,6 +5,9 @@ import { verifyDeployment } from "../scripts/verify-deployment.mjs";
 
 const responses = new Map([
   ["/.well-known/openid-configuration", new Response(JSON.stringify({ issuer: "https://example.com" }))],
+  ["/.well-known/oauth-protected-resource", new Response(JSON.stringify({
+    resource: "https://example.com", authorization_servers: ["https://example.com"]
+  }))],
   ["/.well-known/mcp/server-card.json", new Response(JSON.stringify({ serverInfo: { name: "test" } }))],
   ["/auth.md", new Response("OAuth and MCP documentation")],
   ["/", new Response("Worker healthy")]
@@ -24,10 +27,29 @@ test("deployment verifier checks Phase 1 endpoints and the healthy Worker path",
   assert.deepEqual(report.results.phase2, { retry: true, rateLimit: true });
   assert.equal(report.results.phase3.metrics, true);
   assert.deepEqual(requests.map(item => new URL(item.url).pathname), [
-    "/.well-known/openid-configuration", "/.well-known/mcp/server-card.json", "/auth.md", "/"
+    "/.well-known/openid-configuration", "/.well-known/oauth-protected-resource",
+    "/.well-known/mcp/server-card.json", "/auth.md", "/"
   ]);
   assert.ok(requests.every(item => item.options.redirect === "manual"));
-  assert.equal(report.allEndpoints.length, 6);
+  assert.equal(report.allEndpoints.length, 7);
+});
+
+test("deployment verifier fails OAuth discovery when protected resource metadata is missing", async () => {
+  const report = await verifyDeployment("https://example.com", {
+    fetchImpl: async url => ({
+      "/.well-known/openid-configuration": () => new Response(JSON.stringify({ issuer: "https://example.com" })),
+      "/.well-known/oauth-protected-resource": () => new Response("Not Found", { status: 404 }),
+      "/.well-known/mcp/server-card.json": () => new Response(JSON.stringify({ serverInfo: { name: "test" } }))
+    })[url.pathname]?.() || new Response("OAuth and MCP documentation")
+  });
+
+  assert.equal(report.success, false);
+  assert.deepEqual(report.results.phase1, { oauth: false, mcp: true, auth: true });
+  assert.deepEqual(report.results.phase2, { retry: true, rateLimit: true });
+  assert.deepEqual(report.allEndpoints.slice(0, 2), [
+    { endpoint: "/.well-known/openid-configuration", status: "✅" },
+    { endpoint: "/.well-known/oauth-protected-resource", status: "❌", detail: "HTTP 404" }
+  ]);
 });
 
 test("deployment verifier reports malformed and missing endpoint responses as failures", async () => {

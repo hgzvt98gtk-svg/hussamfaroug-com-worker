@@ -72,17 +72,31 @@ test("OAuth and MCP discovery endpoints return public JSON through Worker GET an
             grant_types_supported: ["implicit", "authorization_code"],
             scopes_supported: ["openid", "profile"],
             response_types_supported: ["code", "token"],
-            token_endpoint_auth_methods_supported: ["none"],
-            agent_auth: {
-              register_uri: host + "/auth.md",
-              identity_types_supported: [],
-              credential_types_supported: []
-            }
+            token_endpoint_auth_methods_supported: ["none"]
           });
+          assert.equal("agent_auth" in data, false);
         }
       }
     }
   }
+});
+
+test("OAuth protected resource metadata is delivered directly by the Worker", async () => {
+  const response = await worker.fetch(new Request(origin + "/.well-known/oauth-protected-resource", {
+    headers: { Accept: "application/json", "cf-connecting-ip": "192.0.2.10" }
+  }), {});
+  assert.equal(response.status, 200);
+  assert.equal(response.redirected, false);
+  assert.equal(response.headers.get("Location"), null);
+  assert.equal(response.headers.get("Content-Type"), "application/json");
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
+  assert.equal(response.headers.get("Cache-Control"), "public, max-age=3600");
+  assert.deepEqual(await response.json(), {
+    resource: origin,
+    authorization_servers: [origin],
+    scopes_supported: ["openid", "profile"],
+    resource_documentation: origin + "/auth.md"
+  });
 });
 
 test("site card describes only public content and a browser tool", async () => {
@@ -149,7 +163,12 @@ test("auth.md documents discovery, manual registration, and separate signature v
   assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
   const auth = await response.text();
   assert.match(auth, /^# Auth\.md\n/);
+  assert.ok(auth.indexOf("## Disclaimer") < auth.indexOf("## OpenID Connect"));
+  assert.match(auth, /\*\*Important:\*\* This Worker does not implement OAuth token issuance, an OpenID Connect provider, or automated agent registration/);
+  assert.match(auth, /endpoints do not function; do not attempt to authenticate/);
+  assert.match(auth, /registration is manual only/i);
   for (const heading of [
+    "Disclaimer",
     "OpenID Connect / OAuth 2.0 registration",
     "MCP tool discovery",
     "HTTP message signature verification",

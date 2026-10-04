@@ -85,11 +85,18 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
     return valid;
   }
 
-  results.phase1.oauth = await checkJson(
+  const oauthDiscovery = await checkJson(
     "/.well-known/openid-configuration",
     "application/json",
     data => Boolean(data && typeof data.issuer === "string" && data.issuer)
   );
+  const protectedResource = await checkJson(
+    "/.well-known/oauth-protected-resource",
+    "application/json",
+    data => Boolean(data && typeof data.resource === "string" && data.resource &&
+      Array.isArray(data.authorization_servers) && data.authorization_servers.length)
+  );
+  results.phase1.oauth = oauthDiscovery && protectedResource;
   results.phase1.mcp = await checkJson(
     "/.well-known/mcp/server-card.json",
     "application/json",
