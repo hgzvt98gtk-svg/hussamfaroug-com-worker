@@ -79,6 +79,7 @@ export function oauthAuthorizationServer(origin) {
     response_types_supported: ["code", "token"],
     token_endpoint_auth_methods_supported: ["none"],
     agent_auth: {
+      skill: origin + "/auth.md",
       register_uri: origin + "/auth.md#agent-registration",
       identity_types_supported: [],
       credential_types_supported: []

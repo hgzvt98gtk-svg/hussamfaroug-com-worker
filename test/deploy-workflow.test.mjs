@@ -6,6 +6,14 @@ import test from "node:test";
 const workflow = readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
 const step = workflow.split("      - name: Re-enable observability\n")[1];
 
+test("deployment verifies production discovery after publishing with Node 22", () => {
+  const deploy = workflow.split("  deploy:\n")[1];
+  assert.match(deploy, /uses: actions\/setup-node@v6\s+with:\s+node-version: "22"/);
+  assert.match(deploy, /name: Verify production discovery metadata\s+run: node scripts\/verify-deployment\.mjs https:\/\/hussamfaroug\.com/);
+  assert.ok(deploy.indexOf("command: deploy") < deploy.indexOf("name: Verify production discovery metadata"));
+  assert.doesNotMatch(deploy, /continue-on-error:/);
+});
+
 test("observability PATCH expands secret-backed authorization and propagates HTTP failures", () => {
   assert.ok(step, "observability step exists");
   assert.match(step, /CF_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/);

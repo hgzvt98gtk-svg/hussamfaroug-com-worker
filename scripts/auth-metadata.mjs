@@ -1,7 +1,8 @@
 const EXPECTED_AGENT_AUTH_KEYS = [
   "credential_types_supported",
   "identity_types_supported",
-  "register_uri"
+  "register_uri",
+  "skill"
 ];
 
 export function validateAuthMetadataChain({ origin, protectedResource, authorizationServer, authMarkdown }) {
@@ -27,7 +28,10 @@ export function validateAuthMetadataChain({ origin, protectedResource, authoriza
   } else {
     const keys = Object.keys(agentAuth).sort();
     if (JSON.stringify(keys) !== JSON.stringify(EXPECTED_AGENT_AUTH_KEYS)) {
-      issues.push("agent_auth must contain only register_uri and the supported identity/credential type lists");
+      issues.push("agent_auth must contain only skill, register_uri and the supported identity/credential type lists");
+    }
+    if (agentAuth.skill !== origin + "/auth.md") {
+      issues.push("agent_auth.skill does not link to root /auth.md");
     }
     if (agentAuth.register_uri !== origin + "/auth.md#agent-registration") {
       issues.push("agent_auth.register_uri does not link to the root manual registration instructions");
@@ -40,22 +44,29 @@ export function validateAuthMetadataChain({ origin, protectedResource, authoriza
     }
   }
   if (authorizationServer && (
+    Object.hasOwn(authorizationServer, "registration_endpoint") ||
     Object.hasOwn(authorizationServer, "claim_endpoint") ||
     Object.hasOwn(authorizationServer, "revocation_endpoint")
   )) {
-    issues.push("authorization server must omit unimplemented claim and revocation endpoints");
+    issues.push("authorization server must omit unimplemented registration, claim and revocation endpoints");
   }
 
-  for (const [description, pattern] of [
-    ["an Agent registration section", /^## Agent registration$/m],
-    ["manual-only registration instructions", /registration is manual only/i],
-    ["a warning not to POST registration requests", /do not POST registration requests/i],
-    ["the absence of automated identity and credential support", /identity_types_supported is empty[\s\S]*credential_types_supported is empty/i],
-    ["the absence of claim and revocation APIs", /no registration, claim, or revocation API exists/i],
-    ["an explanation that claim and revocation URLs are omitted", /Claim and revocation URLs are omitted/i]
+  const markdown = typeof authMarkdown === "string" ? authMarkdown : "";
+  const registration = markdown.match(
+    /^#{1,6}[ \t]+agent registration[ \t]*#*[ \t]*\r?\n([\s\S]*?)(?=^#{1,6}[ \t]+|(?![\s\S]))/im
+  )?.[1];
+  if (!registration) {
+    issues.push("root /auth.md is missing an Agent registration section");
+  } else if (!/\bmanual(?:ly)?\b/i.test(registration) ||
+      !/mailto:[^\s<>]+@[^\s<>]+/i.test(registration)) {
+    issues.push("root /auth.md is missing manual registration contact instructions");
+  }
+  for (const path of [
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-authorization-server"
   ]) {
-    if (typeof authMarkdown !== "string" || !pattern.test(authMarkdown)) {
-      issues.push("root /auth.md is missing " + description);
+    if (!markdown.includes(origin + path)) {
+      issues.push("root /auth.md is missing the discovery link " + path);
     }
   }
 

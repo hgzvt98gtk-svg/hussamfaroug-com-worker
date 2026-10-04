@@ -56,18 +56,20 @@ test("deployment verifier fails OAuth discovery when protected resource metadata
 });
 
 test("deployment verifier rejects inconsistent and malformed Auth.md discovery metadata", async () => {
-  for (const mutate of [
-    data => { data.resource = "https://other.example"; },
-    data => { data.authorization_servers = []; },
-    data => {
+  for (const [path, mutate] of [
+    ["/.well-known/oauth-protected-resource", data => { data.resource = "https://other.example"; }],
+    ["/.well-known/oauth-protected-resource", data => { data.authorization_servers = []; }],
+    ["/.well-known/oauth-protected-resource", data => { data.resource_documentation = origin + "/docs/auth.md"; }],
+    ["/.well-known/oauth-authorization-server", data => { data.agent_auth.register_uri = origin + "/register"; }],
+    ["/.well-known/oauth-authorization-server", data => {
       data.agent_auth.identity_types_supported = ["anonymous"];
       data.revocation_endpoint = origin + "/oauth/revoke";
-    }
+    }]
   ]) {
     const report = await verifyDeployment(origin, {
       fetchImpl: async url => {
-        if (url.pathname === "/.well-known/oauth-protected-resource") {
-          const data = await oauthProtectedResource(origin).json();
+        if (url.pathname === path) {
+          const data = await responses.get(path)().json();
           mutate(data);
           return json(data);
         }
@@ -77,7 +79,7 @@ test("deployment verifier rejects inconsistent and malformed Auth.md discovery m
     assert.equal(report.success, false);
     assert.equal(report.results.phase1.oauth, false);
     assert.equal(report.allEndpoints.find(item =>
-      item.endpoint === "/.well-known/oauth-protected-resource").status, "❌");
+      item.endpoint === path).status, "❌");
   }
 
   const missingAgentAuth = await verifyDeployment(origin, {
@@ -105,6 +107,27 @@ test("deployment verifier reports malformed and missing endpoint responses as fa
   assert.equal(report.results.phase2.retry, false);
   assert.equal(report.results.phase3.metrics, false);
   assert.ok(report.allEndpoints.some(item => item.detail === "HTTP 503"));
+});
+
+test("deployment verifier rejects missing, malformed and redirected discovery responses", async () => {
+  for (const path of [
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-authorization-server",
+    "/auth.md"
+  ]) {
+    for (const response of [
+      () => new Response("Not Found", { status: 404 }),
+      () => new Response("{", { headers: { "content-type": "application/json" } }),
+      () => new Response("<html>Not metadata</html>", { headers: { "content-type": "text/html" } }),
+      () => new Response(null, { status: 302, headers: { location: origin + "/docs/auth.md" } })
+    ]) {
+      const report = await verifyDeployment(origin, {
+        fetchImpl: async url => url.pathname === path ? response() : responses.get(url.pathname)()
+      });
+      assert.equal(report.success, false, path);
+      assert.equal(report.allEndpoints.find(item => item.endpoint === path).status, "❌", path);
+    }
+  }
 });
 
 test("deployment verifier handles request failures and rejects unsafe origins", async () => {
