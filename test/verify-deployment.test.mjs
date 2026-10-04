@@ -2,23 +2,25 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { verifyDeployment } from "../scripts/verify-deployment.mjs";
+import { authMd, oauthAuthorizationServer, oauthProtectedResource } from "../metadata.js";
 
+const origin = "https://example.com";
+const json = data => new Response(JSON.stringify(data), { headers: { "content-type": "application/json" } });
 const responses = new Map([
-  ["/.well-known/openid-configuration", new Response(JSON.stringify({ issuer: "https://example.com" }))],
-  ["/.well-known/oauth-protected-resource", new Response(JSON.stringify({
-    resource: "https://example.com", authorization_servers: ["https://example.com"]
-  }))],
-  ["/.well-known/mcp/server-card.json", new Response(JSON.stringify({ serverInfo: { name: "test" } }))],
-  ["/auth.md", new Response("OAuth and MCP documentation")],
-  ["/", new Response("Worker healthy")]
+  ["/.well-known/openid-configuration", () => json({ issuer: origin })],
+  ["/.well-known/oauth-protected-resource", () => oauthProtectedResource(origin)],
+  ["/.well-known/oauth-authorization-server", () => oauthAuthorizationServer(origin)],
+  ["/.well-known/mcp/server-card.json", () => json({ serverInfo: { name: "test" } })],
+  ["/auth.md", () => authMd(origin)],
+  ["/", () => new Response("Worker healthy")]
 ]);
 
 test("deployment verifier checks Phase 1 endpoints and the healthy Worker path", async () => {
   const requests = [];
-  const report = await verifyDeployment("https://example.com/custom/path", {
+  const report = await verifyDeployment(origin + "/custom/path", {
     fetchImpl: async (url, options) => {
       requests.push({ url: url.href, options });
-      return responses.get(url.pathname);
+      return responses.get(url.pathname)?.();
     }
   });
 
@@ -28,23 +30,24 @@ test("deployment verifier checks Phase 1 endpoints and the healthy Worker path",
   assert.equal(report.results.phase3.metrics, true);
   assert.deepEqual(requests.map(item => new URL(item.url).pathname), [
     "/.well-known/openid-configuration", "/.well-known/oauth-protected-resource",
-    "/.well-known/mcp/server-card.json", "/auth.md", "/"
+    "/.well-known/oauth-authorization-server", "/.well-known/mcp/server-card.json", "/auth.md", "/"
   ]);
   assert.ok(requests.every(item => item.options.redirect === "manual"));
-  assert.equal(report.allEndpoints.length, 7);
+  assert.equal(report.allEndpoints.length, 8);
 });
 
 test("deployment verifier fails OAuth discovery when protected resource metadata is missing", async () => {
   const report = await verifyDeployment("https://example.com", {
     fetchImpl: async url => ({
-      "/.well-known/openid-configuration": () => new Response(JSON.stringify({ issuer: "https://example.com" })),
+      "/.well-known/openid-configuration": () => json({ issuer: origin }),
       "/.well-known/oauth-protected-resource": () => new Response("Not Found", { status: 404 }),
-      "/.well-known/mcp/server-card.json": () => new Response(JSON.stringify({ serverInfo: { name: "test" } }))
-    })[url.pathname]?.() || new Response("OAuth and MCP documentation")
+      "/.well-known/oauth-authorization-server": () => oauthAuthorizationServer(origin),
+      "/.well-known/mcp/server-card.json": () => json({ serverInfo: { name: "test" } })
+    })[url.pathname]?.() || authMd(origin)
   });
 
   assert.equal(report.success, false);
-  assert.deepEqual(report.results.phase1, { oauth: false, mcp: true, auth: true });
+  assert.deepEqual(report.results.phase1, { oauth: false, mcp: true, auth: false });
   assert.deepEqual(report.results.phase2, { retry: true, rateLimit: true });
   assert.deepEqual(report.allEndpoints.slice(0, 2), [
     { endpoint: "/.well-known/openid-configuration", status: "✅" },
@@ -52,11 +55,47 @@ test("deployment verifier fails OAuth discovery when protected resource metadata
   ]);
 });
 
+test("deployment verifier rejects inconsistent and malformed Auth.md discovery metadata", async () => {
+  for (const mutate of [
+    data => { data.resource = "https://other.example"; },
+    data => { data.authorization_servers = []; },
+    data => {
+      data.agent_auth.identity_types_supported = ["anonymous"];
+      data.revocation_endpoint = origin + "/oauth/revoke";
+    }
+  ]) {
+    const report = await verifyDeployment(origin, {
+      fetchImpl: async url => {
+        if (url.pathname === "/.well-known/oauth-protected-resource") {
+          const data = await oauthProtectedResource(origin).json();
+          mutate(data);
+          return json(data);
+        }
+        return responses.get(url.pathname)?.() || new Response("Worker healthy");
+      }
+    });
+    assert.equal(report.success, false);
+    assert.equal(report.results.phase1.oauth, false);
+    assert.equal(report.allEndpoints.find(item =>
+      item.endpoint === "/.well-known/oauth-protected-resource").status, "❌");
+  }
+
+  const missingAgentAuth = await verifyDeployment(origin, {
+    fetchImpl: async url => url.pathname === "/.well-known/oauth-authorization-server"
+      ? json({ issuer: origin })
+      : responses.get(url.pathname)?.() || new Response("Worker healthy")
+  });
+  assert.equal(missingAgentAuth.success, false);
+  assert.equal(missingAgentAuth.results.phase1.oauth, false);
+  assert.equal(missingAgentAuth.allEndpoints.find(item =>
+    item.endpoint === "/.well-known/oauth-authorization-server").status, "❌");
+});
+
 test("deployment verifier reports malformed and missing endpoint responses as failures", async () => {
   const report = await verifyDeployment("https://example.com", {
     fetchImpl: async url => url.pathname === "/"
       ? new Response("Unavailable", { status: 503 })
-      : new Response("{}")
+      : json({})
   });
 
   assert.equal(report.success, false);

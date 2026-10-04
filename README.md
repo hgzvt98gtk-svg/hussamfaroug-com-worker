@@ -194,9 +194,12 @@ node scripts/verify-deployment.mjs
 node scripts/verify-deployment.mjs https://hussamfaroug.com
 ```
 
-The script checks the OAuth discovery document, OAuth protected resource
-metadata, MCP server card, `/auth.md`, and a healthy root request without
-following redirects; it prints JSON and exits nonzero if checks fail.
+The script checks OAuth/OIDC discovery, the OAuth protected resource, the
+authorization server's `agent_auth` fields, their issuer/resource/documentation
+links, the GET-only manual `/auth.md` instructions, the MCP server card, and a
+healthy root request without following redirects. It rejects unsupported
+identity or credential types and unimplemented claim/revocation endpoints,
+prints JSON, and exits nonzero if checks fail.
 The root check confirms the Worker responds through its retry and rate-limit
 middleware, but does not force a transient origin failure or send a burst of
 requests to trigger the rate limit. It cannot observe metrics logging from the
@@ -411,7 +414,8 @@ No dependencies, credentials or Cloudflare API access are needed. The script
 accepts **no target arguments** and follows no redirects: it only probes the
 fixed public site, with GET/HEAD, sequentially. It checks anonymous and grouped
 dummy-identity HTML/Markdown requests, copied CDN cache controls, descriptive
-`/auth.md`, OAuth/OIDC and MCP discovery JSON (200, public one-hour cache and CORS),
+`/auth.md`, the PRM → authorization server → manual registration documentation
+chain, and OAuth/OIDC and MCP discovery JSON (200, public one-hour cache and CORS),
 representative retired service paths (404 and no-store),
 public `/robots.txt` and a fixed `/favicon.ico` candidate. Static identity
 coverage is skipped unless that candidate is actually a successful non-HTML

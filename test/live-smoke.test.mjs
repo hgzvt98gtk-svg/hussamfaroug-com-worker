@@ -41,6 +41,7 @@ test("fixed target checks are sequential, read-only, grouped dummy identities an
   assert.equal(report.counts.httpResponses, 29);
   assert.equal(report.counts.attempted, 29);
   assert.equal(report.counts.skipped, 0);
+  assert.deepEqual(report.metadataChain, { ok: true, skipped: false, issues: [] });
   assert.equal(report.timingSamples.length, 3);
   assert.equal(report.staticCoverage, "verified favicon.ico");
   const root = requests.filter(item => new URL(item.url).pathname === "/");
@@ -61,6 +62,22 @@ test("fixed target checks are sequential, read-only, grouped dummy identities an
   assert.ok(DISCOVERY_PATHS.every(path => requests.some(item => new URL(item.url).pathname === path)));
 });
 
+test("live smoke rejects a broken authorization-server link in an otherwise valid metadata chain", async () => {
+  const report = await runSmoke({
+    fetchImpl: async (url, options) => {
+      if (new URL(url).pathname !== "/.well-known/oauth-authorization-server") return reply(url, options);
+      const response = await reply(url, options);
+      const data = await response.json();
+      data.agent_auth.register_uri = "https://other.example/auth.md";
+      return new Response(JSON.stringify(data), { headers: response.headers });
+    }
+  });
+  assert.equal(report.ok, false);
+  assert.equal(report.metadataChain.skipped, false);
+  assert.equal(report.metadataChain.ok, false);
+  assert.ok(report.metadataChain.issues.some(issue => issue.includes("register_uri")));
+});
+
 test("DNS failures are not HTTP responses or timing samples and trigger bounded fixed diagnostics", async () => {
   const error = Object.assign(new Error("sensitive message must not be printed"), { code: "ENOTFOUND" });
   const urls = [];
@@ -72,6 +89,8 @@ test("DNS failures are not HTTP responses or timing samples and trigger bounded 
     dns: { lookup: async () => { throw error; }, resolve4: async () => { throw error; } }
   });
   assert.equal(report.ok, false);
+  assert.equal(report.metadataChain.skipped, true);
+  assert.deepEqual(report.metadataChain.issues, []);
   assert.deepEqual(report.counts, { attempted: 1, httpResponses: 0, dnsErrors: 1, transportErrors: 0, bodyErrors: 0, skipped: 28 });
   assert.equal(report.timingSamples.length, 0);
   assert.equal(report.diagnostics.length, 4);
