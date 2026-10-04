@@ -103,7 +103,7 @@ function mdRu(href, base) {
   }
 }
 
-export async function convertMd(html, url) {
+export async function convertMd(html, url, onTiming) {
   // Keep generated Markdown out of the later prose tag-stripping and entity-decoding passes.
   var protectedText = [];
   var marker = "\u0000" + crypto.randomUUID() + ":";
@@ -139,6 +139,7 @@ export async function convertMd(html, url) {
   }
   var title = (html.match(mdPatterns.title) || [])[1] || "";
   title = title.trim();
+  var rewriterStartedAt = onTiming ? performance.now() : 0;
   var body = await new HTMLRewriter()
     .on("script, style, head, header, nav, footer, aside, svg, meta, link", {
       element(el) {
@@ -165,6 +166,8 @@ export async function convertMd(html, url) {
       }
     })
     .transform(new Response(html)).text();
+  if (onTiming) onTiming("rewriter", performance.now() - rewriterStartedAt);
+  var markdownStartedAt = onTiming ? performance.now() : 0;
   var match = body.match(mdPatterns.main);
   if (match) body = match[2];
   else {
@@ -207,5 +210,7 @@ export async function convertMd(html, url) {
   body = body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\`[\]]/g, "\\$&")).join("");
   body = body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
   body = join(body.split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
-  return (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  var result = (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  if (onTiming) onTiming("markdown", performance.now() - markdownStartedAt);
+  return result;
 }

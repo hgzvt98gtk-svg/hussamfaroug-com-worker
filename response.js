@@ -53,6 +53,9 @@ export function setDirectiveSources(directives, directiveName, sources) {
 // sources are kept as-is; script-src is only created (inheriting default-src)
 // when neither exists.
 export function mergeWorkerScriptSources(cspHeader, workerSources) {
+  if (cspHeader.includes(",")) {
+    return cspHeader.split(",").map(policy => mergeWorkerScriptSources(policy, workerSources)).join(", ");
+  }
   const directives = parseCSPDirectives(cspHeader);
   const target = getDirectiveIndex(directives, "script-src-elem") >= 0 ? "script-src-elem" : "script-src";
   const base = getDirectiveIndex(directives, target) >= 0

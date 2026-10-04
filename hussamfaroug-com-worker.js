@@ -4,7 +4,7 @@ import { convertMd } from "./markdown.js";
 import { b64u, discoveryHtml, linkHdr, secHdrs, varyAccept, webmcp } from "./response.js";
 import { fetchOriginWithRetry, prefersMarkdown, readHtml } from "./proxy.js";
 import { checkRateLimit } from "./rate-limit.js";
-import { recordConversionTime, recordError, recordRequest } from "./metrics.js";
+import { recordConversionTime, recordError, recordRequest, recordTiming, TIMING_SAMPLE_RATE } from "./metrics.js";
 
 var encoder = new TextEncoder();
 
@@ -33,6 +33,7 @@ var worker_default = {
 };
 
 async function handleRequest(request, env, headOnly = false) {
+  var sampleTiming = Math.random() < TIMING_SAMPLE_RATE;
   recordRequest(request.method === "GET" || request.method === "HEAD"
     ? (prefersMarkdown(request.headers.get("Accept") || "") ? "markdown" : "html")
     : "other");
@@ -100,6 +101,7 @@ async function handleRequest(request, env, headOnly = false) {
   });
   forwardedHeaders.set("Accept", "text/html, */*;q=0.8");
   var upstream;
+  var originStartedAt = sampleTiming ? performance.now() : 0;
   try {
     upstream = await fetchOriginWithRetry(proxyUrl.href, forwardedHeaders, request.signal, 1);
   } catch {
@@ -110,12 +112,16 @@ async function handleRequest(request, env, headOnly = false) {
       "Cache-Control": "no-store",
       "Access-Control-Allow-Origin": "*"
     } });
+  } finally {
+    if (sampleTiming) recordTiming("origin", performance.now() - originStartedAt);
   }
   if (upstream.status >= 500) recordError("origin");
   var mediaType = (upstream.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
   if (mediaType !== "text/html" || upstream.body === null) {
+    var headersStartedAt = sampleTiming ? performance.now() : 0;
     var passthroughHeaders = new Headers(upstream.headers);
     applyCachePolicy(passthroughHeaders, request, upstream);
+    if (sampleTiming) recordTiming("headers", performance.now() - headersStartedAt);
     return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: passthroughHeaders });
   }
   if (prefersMarkdown(request.headers.get("Accept") || "")) {
@@ -124,12 +130,20 @@ async function handleRequest(request, env, headOnly = false) {
       await upstream.body.cancel().catch(() => {});
     } else {
       try {
-        var html = await readHtml(upstream);
-        var conversionStartedAt = Date.now();
+        var readStartedAt = sampleTiming ? performance.now() : 0;
+        var html;
+        try {
+          html = await readHtml(upstream);
+        } finally {
+          if (sampleTiming) recordTiming("readHtml", performance.now() - readStartedAt);
+        }
+        var conversionStartedAt = performance.now();
         try {
           markdown = await convertMd(html, proxyUrl.href);
         } finally {
-          recordConversionTime(Date.now() - conversionStartedAt);
+          var conversionMs = performance.now() - conversionStartedAt;
+          recordConversionTime(conversionMs);
+          if (sampleTiming) recordTiming("conversion", conversionMs);
         }
       } catch {
         recordError("conversion");
@@ -137,13 +151,21 @@ async function handleRequest(request, env, headOnly = false) {
         return new Response("Origin conversion unavailable", { status: 502, headers: { "Cache-Control": "no-store" } });
       }
     }
+    var tokens;
+    if (markdown !== null) {
+      var tokenStartedAt = sampleTiming ? performance.now() : 0;
+      tokens = String(Math.max(1, Math.ceil(encoder.encode(markdown).length / 4)));
+      if (sampleTiming) recordTiming("tokens", performance.now() - tokenStartedAt);
+    }
+    headersStartedAt = sampleTiming ? performance.now() : 0;
     var markdownHeaders = new Headers(upstream.headers);
     ["Content-Length", "Content-Encoding", "ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest", "Accept-Ranges", "Content-Range"].forEach(header => markdownHeaders.delete(header));
     markdownHeaders.set("Content-Type", "text/markdown; charset=utf-8");
-    if (markdown !== null) markdownHeaders.set("x-markdown-tokens", String(Math.max(1, Math.ceil(encoder.encode(markdown).length / 4))));
+    if (tokens !== undefined) markdownHeaders.set("x-markdown-tokens", tokens);
     markdownHeaders.set("Content-Signal", "ai-train=yes, search=yes, ai-input=yes");
     applyCachePolicy(markdownHeaders, request, upstream, true);
     varyAccept(markdownHeaders);
+    if (sampleTiming) recordTiming("headers", performance.now() - headersStartedAt);
     return new Response(markdown, { status: upstream.status, statusText: upstream.statusText, headers: markdownHeaders });
   }
   var nonce = b64u(crypto.getRandomValues(new Uint8Array(24)));
@@ -166,12 +188,14 @@ async function handleRequest(request, env, headOnly = false) {
       }
     })
     .transform(upstream);
+  headersStartedAt = sampleTiming ? performance.now() : 0;
   var responseHeaders = new Headers(transformed.headers);
   applyCachePolicy(responseHeaders, request, upstream);
   secHdrs(responseHeaders, nonce);
   responseHeaders.set("Link", linkHdr(origin));
   ["Content-Length", "Content-Encoding", "ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest"].forEach(header => responseHeaders.delete(header));
   varyAccept(responseHeaders);
+  if (sampleTiming) recordTiming("headers", performance.now() - headersStartedAt);
   return new Response(transformed.body, { status: transformed.status, headers: responseHeaders });
 }
 

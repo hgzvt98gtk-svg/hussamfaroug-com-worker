@@ -175,3 +175,36 @@ test("secHdrs falls back to the Worker CSP when the origin provides none or an e
     assert.match(csp, /object-src 'none'/);
   }
 });
+
+test("CSP: preserves multiple origin policies and augments each effective script directive", async (t) => {
+  // Header-only integration test; HTML transformation is covered in worker.test.mjs.
+  const originalRewriter = globalThis.HTMLRewriter;
+  t.after(() => {
+    if (originalRewriter === undefined) delete globalThis.HTMLRewriter;
+    else globalThis.HTMLRewriter = originalRewriter;
+  });
+  globalThis.HTMLRewriter = class {
+    on() { return this; }
+    transform(response) { return response; }
+  };
+  const headers = new Headers({ "Content-Type": "text/html" });
+  headers.append("Content-Security-Policy", "script-src 'self'; default-src 'none'");
+  headers.append("Content-Security-Policy", "default-src https://cdn.example; script-src-elem 'self'; object-src 'none'");
+  headers.append("Content-Security-Policy", "default-src 'self'; img-src data:");
+  withFetch(t, async () => new Response("<html><body>Test</body></html>", { headers }));
+  const response = await worker.fetch(new Request("https://hussamfaroug.com/page"), env);
+  const policies = response.headers.get("Content-Security-Policy").split(",");
+  assert.equal(policies.length, 3, "policies remain separately enforced, not unioned");
+  const nonce = policies[0].match(/'nonce-[^']+'/)[0];
+  for (const [index, policy] of policies.entries()) {
+    const directives = parseCSPDirectives(policy);
+    const sources = getDirectiveSources(directives, index === 1 ? "script-src-elem" : "script-src");
+    assert.ok(sources.includes("'self'"));
+    assert.ok(sources.includes(nonce));
+    assert.ok(sources.includes("https://challenges.cloudflare.com"));
+  }
+  assert.equal(getDirectiveSources(parseCSPDirectives(policies[0]), "default-src")[0], "'none'");
+  assert.equal(getDirectiveSources(parseCSPDirectives(policies[1]), "object-src")[0], "'none'");
+  assert.deepEqual(getDirectiveSources(parseCSPDirectives(policies[2]), "img-src"), ["data:"]);
+  await response.body.cancel();
+});

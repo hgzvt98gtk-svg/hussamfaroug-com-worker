@@ -127,6 +127,24 @@ arbitrary custom identity inputs; revisit it before introducing new authenticate
 origin behavior. This is conditional cache hardening, not a demonstrated exploit
 against the current static origin.
 
+### Custom Identity Headers
+
+The Worker marks proxied responses `private, no-store` for incoming
+`Authorization`, `Cookie`, `X-API-Key`, `X-Auth-Token`, `X-Access-Token`,
+`Bearer`, and `X-Custom-Auth`, or an upstream `Set-Cookie`.
+
+**Important:** origin-specific identity headers outside this list, such as
+`X-User-ID` or `X-Tenant`, do **not** trigger private caching. If the origin
+personalizes content using them, configure `Cache-Control: private, no-store`
+and appropriate `Vary` headers. `Vary` alone is safe only if every downstream
+cache actually honors that header in its cache key; confirm Cloudflare's cache
+rules rather than assuming arbitrary `Vary` values are supported.
+
+For example, a response personalized by `X-User-ID: 123` without private cache
+controls or a correctly partitioned cache key can be reused for another user.
+Prevent this at the origin and review CDN cache overrides before enabling
+personalized pages. Public Worker-generated metadata is intentionally exempt.
+
 Markdown link and image destinations resolve against the origin page URL and
 allow only HTTP/HTTPS (not mailto/tel or embedded data). Invalid links become
 escaped label text; invalid images become escaped alt text. Attribute decoding
