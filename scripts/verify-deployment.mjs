@@ -68,7 +68,8 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
         detail = `HTTP ${response.status}`;
       } else {
         try {
-          valid = validate(JSON.parse(text));
+          valid = response.headers.get("Content-Type")?.split(";")[0].trim() === accept &&
+           validate(JSON.parse(text));
         } catch {
           valid = false;
         }
@@ -93,10 +94,21 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
   const protectedResource = await checkJson(
     "/.well-known/oauth-protected-resource",
     "application/json",
-    data => Boolean(data && typeof data.resource === "string" && data.resource &&
-      Array.isArray(data.authorization_servers) && data.authorization_servers.length)
+    data => Boolean(data?.resource === targetOrigin &&
+      Array.isArray(data.authorization_servers) && data.authorization_servers.includes(targetOrigin) &&
+      data.resource_documentation === targetOrigin + "/auth.md")
   );
-  results.phase1.oauth = oauthDiscovery && protectedResource;
+  const authorizationServer = await checkJson(
+    "/.well-known/oauth-authorization-server",
+    "application/json",
+    data => Boolean(data?.issuer === targetOrigin &&
+      data.agent_auth?.skill === targetOrigin + "/auth.md" &&
+      data.agent_auth?.register_uri === targetOrigin + "/auth.md#agent-registration" &&
+      ["identity_types_supported", "credential_types_supported"].every(field =>
+        Array.isArray(data.agent_auth[field]) &&
+        data.agent_auth[field].every(value => typeof value === "string" && value.length > 0)))
+  );
+  results.phase1.oauth = oauthDiscovery && protectedResource && authorizationServer;
   results.phase1.mcp = await checkJson(
     "/.well-known/mcp/server-card.json",
     "application/json",
@@ -109,8 +121,13 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
   try {
     const response = await request(authPath, "text/markdown");
     const text = await responseText(response);
-    authValid = response.ok && text.includes("OAuth") && text.includes("MCP");
-    if (!authValid) authDetail = response.ok ? "Expected OAuth and MCP documentation" : `HTTP ${response.status}`;
+    authValid = response.ok &&
+      response.headers.get("Content-Type")?.split(";")[0].trim() === "text/markdown" &&
+      text.includes("## Agent registration") &&
+      text.includes(targetOrigin + "/.well-known/oauth-protected-resource") &&
+      text.includes(targetOrigin + "/.well-known/oauth-authorization-server") &&
+      text.includes("OAuth") && text.includes("MCP");
+    if (!authValid) authDetail = response.ok ? "Expected Auth.md registration and discovery instructions" : `HTTP ${response.status}`;
   } catch (error) {
     authDetail = error?.name || "Request failed";
   }
