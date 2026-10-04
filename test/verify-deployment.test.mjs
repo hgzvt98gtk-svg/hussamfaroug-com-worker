@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { authMd, oauthAuthorizationServer, oauthProtectedResource } from "../metadata.js";
 import { verifyDeployment } from "../scripts/verify-deployment.mjs";
 
+const site = "https://example.com";
 const responses = new Map([
-  ["/.well-known/openid-configuration", new Response(JSON.stringify({ issuer: "https://example.com" }))],
-  ["/.well-known/oauth-protected-resource", new Response(JSON.stringify({
-    resource: "https://example.com", authorization_servers: ["https://example.com"]
-  }))],
+  ["/.well-known/openid-configuration", new Response(JSON.stringify({ issuer: site }))],
+  ["/.well-known/oauth-protected-resource", oauthProtectedResource(site)],
+  ["/.well-known/oauth-authorization-server", oauthAuthorizationServer(site)],
   ["/.well-known/mcp/server-card.json", new Response(JSON.stringify({ serverInfo: { name: "test" } }))],
-  ["/auth.md", new Response("OAuth and MCP documentation")],
+  ["/auth.md", authMd(site)],
   ["/", new Response("Worker healthy")]
 ]);
 
@@ -28,10 +29,39 @@ test("deployment verifier checks Phase 1 endpoints and the healthy Worker path",
   assert.equal(report.results.phase3.metrics, true);
   assert.deepEqual(requests.map(item => new URL(item.url).pathname), [
     "/.well-known/openid-configuration", "/.well-known/oauth-protected-resource",
-    "/.well-known/mcp/server-card.json", "/auth.md", "/"
+    "/.well-known/oauth-authorization-server", "/.well-known/mcp/server-card.json", "/auth.md", "/"
   ]);
   assert.ok(requests.every(item => item.options.redirect === "manual"));
-  assert.equal(report.allEndpoints.length, 7);
+  assert.equal(report.allEndpoints.length, 9);
+  assert.deepEqual(report.allEndpoints.find(item => item.endpoint.includes("discovery chain")), {
+    endpoint: "/.well-known/oauth-protected-resource -> /.well-known/oauth-authorization-server -> /auth.md (Auth.md discovery chain)",
+    status: "✅"
+  });
+});
+
+test("deployment verifier fails loudly when production serves stale Auth.md metadata", async () => {
+  const stale = {
+    "/.well-known/oauth-protected-resource": { resource: site, authorization_servers: [site], resource_documentation: site + "/auth.md" },
+    "/.well-known/oauth-authorization-server": { issuer: site, agent_auth: {
+      register_uri: site + "/auth.md#agent-registration", identity_types_supported: [], credential_types_supported: []
+    } }
+  };
+  const report = await verifyDeployment(site, {
+    fetchImpl: async url => stale[url.pathname]
+      ? new Response(JSON.stringify(stale[url.pathname]))
+      : url.pathname === "/auth.md"
+        ? new Response("# Auth.md\n\nOAuth and MCP documentation")
+        : new Response(JSON.stringify({ issuer: site, serverInfo: {} }))
+  });
+  assert.equal(report.success, false);
+  assert.equal(report.results.phase1.oauth, true);
+  assert.equal(report.results.phase1.auth, false);
+  const chain = report.allEndpoints.find(item => item.endpoint.includes("discovery chain"));
+  assert.equal(chain.status, "❌");
+  for (const expected of [
+    "bearer_methods_supported must include header", "agent_auth.skill must be",
+    "identity_types_supported must be a non-empty array", "H1 containing auth.md"
+  ]) assert.ok(chain.detail.includes(expected), expected);
 });
 
 test("deployment verifier fails OAuth discovery when protected resource metadata is missing", async () => {
@@ -44,7 +74,7 @@ test("deployment verifier fails OAuth discovery when protected resource metadata
   });
 
   assert.equal(report.success, false);
-  assert.deepEqual(report.results.phase1, { oauth: false, mcp: true, auth: true });
+  assert.deepEqual(report.results.phase1, { oauth: false, mcp: true, auth: false });
   assert.deepEqual(report.results.phase2, { retry: true, rateLimit: true });
   assert.deepEqual(report.allEndpoints.slice(0, 2), [
     { endpoint: "/.well-known/openid-configuration", status: "✅" },

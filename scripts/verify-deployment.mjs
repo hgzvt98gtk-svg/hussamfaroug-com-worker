@@ -1,5 +1,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  AUTH_MD_PATH, AUTHORIZATION_SERVER_PATH, PROTECTED_RESOURCE_PATH, validateAuthDiscoveryChain
+} from "./auth-metadata.mjs";
 
 const DEFAULT_ORIGIN = "https://hussamfaroug.com";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -58,6 +61,8 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
     signal: AbortSignal.timeout(timeoutMs)
   });
 
+  const documents = {};
+
   async function checkJson(path, accept, validate) {
     let valid = false;
     let detail;
@@ -68,7 +73,8 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
         detail = `HTTP ${response.status}`;
       } else {
         try {
-          valid = validate(JSON.parse(text));
+          documents[path] = JSON.parse(text);
+          valid = validate(documents[path]);
         } catch {
           valid = false;
         }
@@ -91,34 +97,53 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
     data => Boolean(data && typeof data.issuer === "string" && data.issuer)
   );
   const protectedResource = await checkJson(
-    "/.well-known/oauth-protected-resource",
+    PROTECTED_RESOURCE_PATH,
     "application/json",
     data => Boolean(data && typeof data.resource === "string" && data.resource &&
       Array.isArray(data.authorization_servers) && data.authorization_servers.length)
   );
-  results.phase1.oauth = oauthDiscovery && protectedResource;
+  const authorizationServer = await checkJson(
+    AUTHORIZATION_SERVER_PATH,
+    "application/json",
+    data => Boolean(data && typeof data.issuer === "string" && data.issuer && data.agent_auth)
+  );
+  results.phase1.oauth = oauthDiscovery && protectedResource && authorizationServer;
   results.phase1.mcp = await checkJson(
     "/.well-known/mcp/server-card.json",
     "application/json",
     data => Boolean(data?.serverInfo && typeof data.serverInfo === "object")
   );
 
-  const authPath = "/auth.md";
+  const authPath = AUTH_MD_PATH;
   let authValid = false;
   let authDetail;
+  let authText;
   try {
     const response = await request(authPath, "text/markdown");
     const text = await responseText(response);
     authValid = response.ok && text.includes("OAuth") && text.includes("MCP");
+    if (response.ok) authText = text;
     if (!authValid) authDetail = response.ok ? "Expected OAuth and MCP documentation" : `HTTP ${response.status}`;
   } catch (error) {
     authDetail = error?.name || "Request failed";
   }
-  results.phase1.auth = authValid;
   results.allEndpoints.push({
     endpoint: authPath,
     status: authValid ? "✅" : "❌",
     ...(authDetail ? { detail: authDetail } : {})
+  });
+
+  const chainIssues = validateAuthDiscoveryChain({
+    origin: targetOrigin,
+    protectedResource: documents[PROTECTED_RESOURCE_PATH],
+    authorizationServer: documents[AUTHORIZATION_SERVER_PATH],
+    authMd: authText
+  });
+  results.phase1.auth = authValid && chainIssues.length === 0;
+  results.allEndpoints.push({
+    endpoint: `${PROTECTED_RESOURCE_PATH} -> ${AUTHORIZATION_SERVER_PATH} -> ${AUTH_MD_PATH} (Auth.md discovery chain)`,
+    status: chainIssues.length === 0 ? "✅" : "❌",
+    ...(chainIssues.length ? { detail: chainIssues.join("; ") } : {})
   });
 
   const rootPath = "/";

@@ -319,8 +319,17 @@ curl -i https://hussamfaroug.com/.well-known/mcp/server-card.json
 # Protected resource body: {"resource":"https://hussamfaroug.com",
 #   "authorization_servers":["https://hussamfaroug.com"],
 #   "scopes_supported":["openid","profile"],
+#   "bearer_methods_supported":["header"],
 #   "resource_documentation":"https://hussamfaroug.com/auth.md"}
-# Authorization server metadata has no agent_auth block (no registration API exists)
+# Authorization server metadata includes:
+#   "agent_auth":{"skill":"https://hussamfaroug.com/auth.md",
+#     "register_uri":"https://hussamfaroug.com/auth.md#agent-registration",
+#     "identity_types_supported":["anonymous"],
+#     "credential_types_supported":["none"],
+#     "anonymous":{"credential_types_supported":["none"]}}
+# No claim, revocation, or registration API URL is advertised (none exists)
+# Validate the whole PRM -> AS -> /auth.md chain (exits nonzero on stale/malformed metadata):
+node scripts/verify-deployment.mjs https://hussamfaroug.com
 # MCP transport is browser-only, not an HTTP MCP service
 
 # Test 8.3: MCP endpoint
@@ -347,7 +356,8 @@ issuance and validation. Do not treat discovery success as authentication readin
 curl -i https://hussamfaroug.com/auth.md
 
 # Expected: HTTP 200, Content-Type: text/markdown or text/plain
-# Body starts with # Auth.md and documents OAuth/OIDC registration,
+# Body starts with # hussamfaroug.com auth.md, opens with "You are an agent" and
+# **agentic registration**, and documents OAuth/OIDC registration,
 # browser MCP discovery, HTTP message signature verification, and registration contact.
 # It must explain that Phase 1 does not implement token issuance or validation.
 # A "## Disclaimer" section near the top states there is no token issuance,

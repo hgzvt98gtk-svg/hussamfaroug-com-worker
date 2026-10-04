@@ -162,10 +162,15 @@ OAuth authentication, configure an external OAuth provider and update the
 discovery endpoints to point to that provider's actual endpoints. The
 authorization server metadata includes an `agent_auth` block whose `register_uri`
 points to `/auth.md#agent-registration`, a GET-only manual registration guide,
-not a registration API. `identity_types_supported` and `credential_types_supported`
-are empty because no automated identity registration or credential issuance is
-supported. Claim and revocation URLs are omitted because those services do not
-exist. `/auth.md` opens with a disclaimer and documents manual registration by
+not a registration API, and whose `skill` points to `/auth.md`.
+`identity_types_supported` is `["anonymous"]` (agents read public content
+without registering) and `credential_types_supported` (top level and under
+`anonymous`) is `["none"]` because no credential is issued. Protected resource
+metadata lists `bearer_methods_supported: ["header"]` for checker compatibility;
+the site does not require or validate bearer tokens. Claim and revocation URLs
+are omitted because those services do not exist.
+`scripts/auth-metadata.mjs` holds the shared PRM -> authorization server ->
+`/auth.md` chain invariants used by the tests and the deployment verifier. `/auth.md` opens with a disclaimer and documents manual registration by
 contacting the administrator.
 Public content still needs no credentials. A2A, HTTP MCP, and legacy credential
 service paths remain 404.
@@ -195,8 +200,13 @@ node scripts/verify-deployment.mjs https://hussamfaroug.com
 ```
 
 The script checks the OAuth discovery document, OAuth protected resource
-metadata, MCP server card, `/auth.md`, and a healthy root request without
-following redirects; it prints JSON and exits nonzero if checks fail.
+metadata, authorization server metadata, MCP server card, `/auth.md`, the full
+Auth.md discovery chain between them, and a healthy root request without
+following redirects; it prints JSON and exits nonzero if checks fail. The
+deploy workflow runs it against production after every `main` deployment, so a
+stale or malformed live deployment fails the workflow instead of passing
+silently. Only `hussamfaroug.com/*` is routed to the Worker (`wrangler.toml`);
+other hostnames such as `www` or the Pages origin do not serve this metadata.
 The root check confirms the Worker responds through its retry and rate-limit
 middleware, but does not force a transient origin failure or send a burst of
 requests to trigger the rate limit. It cannot observe metrics logging from the

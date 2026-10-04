@@ -5,6 +5,9 @@ import { authMd, isLegacyDiscoveryPath, wellKnown } from "../metadata.js";
 import { discoveryLinks, SITE_INFO_TOOL } from "../discovery.js";
 import { discoveryHtml, linkHdr, webmcp } from "../response.js";
 import worker from "../hussamfaroug-com-worker.js";
+import {
+  AUTH_MD_PATH, AUTHORIZATION_SERVER_PATH, PROTECTED_RESOURCE_PATH, validateAuthDiscoveryChain
+} from "../scripts/auth-metadata.mjs";
 
 const origin = "https://hussamfaroug.com";
 const get = path => wellKnown(new Request(origin + path), () => new Response("{}"));
@@ -55,6 +58,7 @@ test("OAuth and MCP discovery endpoints return public JSON through Worker GET an
             resource: host,
             authorization_servers: [host],
             scopes_supported: ["openid", "profile"],
+            bearer_methods_supported: ["header"],
             resource_documentation: host + "/auth.md"
           });
         } else if (path.endsWith("server-card.json")) {
@@ -74,9 +78,11 @@ test("OAuth and MCP discovery endpoints return public JSON through Worker GET an
             response_types_supported: ["code", "token"],
             token_endpoint_auth_methods_supported: ["none"],
             agent_auth: {
+              skill: host + "/auth.md",
               register_uri: host + "/auth.md#agent-registration",
-              identity_types_supported: [],
-              credential_types_supported: []
+              identity_types_supported: ["anonymous"],
+              credential_types_supported: ["none"],
+              anonymous: { credential_types_supported: ["none"] }
             }
           });
         }
@@ -99,6 +105,7 @@ test("OAuth protected resource metadata is delivered directly by the Worker", as
     resource: origin,
     authorization_servers: [origin],
     scopes_supported: ["openid", "profile"],
+    bearer_methods_supported: ["header"],
     resource_documentation: origin + "/auth.md"
   });
 });
@@ -166,7 +173,9 @@ test("auth.md documents discovery, manual registration, and separate signature v
   assert.equal(response.headers.get("Cache-Control"), "public, max-age=3600");
   assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
   const auth = await response.text();
-  assert.match(auth, /^# Auth\.md\n/);
+  assert.match(auth, /^# hussamfaroug\.com auth\.md\n/);
+  assert.match(auth, /You are an agent\./);
+  assert.match(auth, /\*\*agentic registration\*\*/);
   assert.ok(auth.indexOf("## Disclaimer") < auth.indexOf("## OpenID Connect"));
   assert.match(auth, /\*\*Important:\*\* This Worker does not implement OAuth token issuance, an OpenID Connect provider, or automated agent registration/);
   assert.match(auth, /endpoints do not function; do not attempt to authenticate/);
@@ -187,8 +196,10 @@ test("auth.md documents discovery, manual registration, and separate signature v
   assert.match(auth, /no automated credential issuance/);
   assert.match(auth, /admin@hussamfaroug\.com/);
   assert.match(auth, /not OAuth token verification keys/);
-  assert.match(auth, /identity_types_supported is empty/);
-  assert.match(auth, /credential_types_supported is empty/);
+  assert.match(auth, /identity_types_supported is \["anonymous"\]/);
+  assert.match(auth, /credential_types_supported are \["none"\]/);
+  assert.match(auth, /No credential, token, or identity assertion is issued/);
+  assert.match(auth, /does not require or validate bearer tokens/);
   assert.match(auth, /Claim and revocation URLs are omitted/);
   assert.match(auth, /do not POST registration requests/);
   for (const path of [
@@ -202,8 +213,10 @@ test("agent registration metadata links root instructions without advertising un
   const response = await worker.fetch(new Request(origin + "/.well-known/oauth-authorization-server"), {});
   const { agent_auth } = await response.json();
   assert.deepEqual(Object.keys(agent_auth).sort(), [
-    "credential_types_supported", "identity_types_supported", "register_uri"
+    "anonymous", "credential_types_supported", "identity_types_supported", "register_uri", "skill"
   ]);
+  assert.deepEqual(agent_auth.anonymous, { credential_types_supported: ["none"] });
+  assert.equal(agent_auth.skill, origin + "/auth.md");
   const registrationUrl = new URL(agent_auth.register_uri);
   assert.equal(registrationUrl.origin, origin);
   assert.equal(registrationUrl.pathname, "/auth.md");
@@ -251,4 +264,58 @@ test("health is uncacheable and the signature directory uses the supplied handle
   });
   assert.equal(result.status, 503);
   assert.equal(await result.text(), "configured directory");
+});
+
+async function fetchChain(host) {
+  const prmResponse = await worker.fetch(new Request(host + PROTECTED_RESOURCE_PATH), {});
+  const protectedResource = await prmResponse.json();
+  const asUrl = new URL(AUTHORIZATION_SERVER_PATH, protectedResource.authorization_servers[0]);
+  const authorizationServer = await (await worker.fetch(new Request(asUrl), {})).json();
+  const docUrl = new URL(authorizationServer.agent_auth.skill);
+  assert.equal(docUrl.href, protectedResource.resource_documentation);
+  const authMdText = await (await worker.fetch(new Request(docUrl), {})).text();
+  return { origin: host, protectedResource, authorizationServer, authMd: authMdText };
+}
+
+test("Auth.md discovery chain resolves from PRM through AS metadata to /auth.md on every host", async () => {
+  for (const host of [origin, "https://preview.example.com:8443"]) {
+    assert.deepEqual(validateAuthDiscoveryChain(await fetchChain(host)), [], host);
+  }
+});
+
+test("Auth.md discovery chain validator rejects malformed, inconsistent, or untruthful metadata", async () => {
+  const valid = await fetchChain(origin);
+  const clone = () => structuredClone(valid);
+  const cases = [
+    ["missing PRM", chain => { chain.protectedResource = "Not Found"; }, /protected resource metadata is not a JSON object/],
+    ["cross-origin resource", chain => { chain.protectedResource.resource = "https://www.hussamfaroug.com"; }, /resource must be/],
+    ["foreign authorization server", chain => { chain.protectedResource.authorization_servers = ["https://auth.example.com"]; }, /issuer does not match authorization_servers\[0\]/],
+    ["empty authorization servers", chain => { chain.protectedResource.authorization_servers = []; }, /authorization_servers must be a non-empty array/],
+    ["missing bearer methods", chain => { delete chain.protectedResource.bearer_methods_supported; }, /bearer_methods_supported must include header/],
+    ["wrong documentation", chain => { chain.protectedResource.resource_documentation = origin + "/docs"; }, /resource_documentation must be/],
+    ["wrong issuer", chain => { chain.authorizationServer.issuer = origin + "/"; }, /issuer must be/],
+    ["missing agent_auth", chain => { delete chain.authorizationServer.agent_auth; }, /agent_auth block is missing/],
+    ["missing skill", chain => { delete chain.authorizationServer.agent_auth.skill; }, /agent_auth\.skill must be/],
+    ["registration API", chain => { chain.authorizationServer.agent_auth.register_uri = origin + "/agent/register"; }, /agent_auth\.register_uri must be/],
+    ["empty identity types", chain => { chain.authorizationServer.agent_auth.identity_types_supported = []; }, /identity_types_supported must be a non-empty array/],
+    ["empty credential types", chain => { chain.authorizationServer.agent_auth.credential_types_supported = []; }, /credential_types_supported must be a non-empty array/],
+    ["incomplete anonymous method", chain => { delete chain.authorizationServer.agent_auth.anonymous; }, /anonymous\.credential_types_supported must be a non-empty array/],
+    ["claim URL", chain => { chain.authorizationServer.agent_auth.claim_uri = origin + "/agent/claim"; }, /agent_auth\.claim_uri advertises an unimplemented service/],
+    ["nested claim URL", chain => { chain.authorizationServer.agent_auth.anonymous.claim_uri = origin + "/agent/claim"; }, /agent_auth\.anonymous\.claim_uri is not a supported field/],
+    ["revocation URL", chain => { chain.authorizationServer.agent_auth.revocation_uri = origin + "/agent/revoke"; }, /agent_auth\.revocation_uri advertises an unimplemented service/],
+    ["revocation endpoint", chain => { chain.authorizationServer.revocation_endpoint = origin + "/oauth/revoke"; }, /revocation_endpoint advertises an unimplemented service/],
+    ["misspelled field", chain => { chain.authorizationServer.agent_auth.registration_uri = origin + "/auth.md"; }, /agent_auth\.registration_uri is not a supported field/],
+    ["stale auth.md heading", chain => { chain.authMd = chain.authMd.replace(/^# [^\n]*/, "# Auth"); }, /H1 containing auth\.md/],
+    ["missing registration markers", chain => { chain.authMd = chain.authMd.replace("You are an agent", "Agents"); }, /missing marker You are an agent/],
+    ["missing registration anchor", chain => { chain.authMd = chain.authMd.replace("## Agent registration", "## Registration"); }, /no #agent-registration heading/],
+    ["missing PRM link", chain => { chain.authMd = chain.authMd.replaceAll(origin + PROTECTED_RESOURCE_PATH, ""); }, /does not link .*oauth-protected-resource/],
+    ["HTML instead of Markdown", chain => { chain.authMd = "<!doctype html><title>Home</title>"; }, new RegExp(AUTH_MD_PATH.replace(".", "\\.") + ": auth\\.md must start")]
+  ];
+  for (const [name, mutate, expected] of cases) {
+    const chain = clone();
+    mutate(chain);
+    const issues = validateAuthDiscoveryChain(chain);
+    assert.ok(issues.some(issue => expected.test(issue)), name + ": " + JSON.stringify(issues));
+  }
+  assert.deepEqual(validateAuthDiscoveryChain({ ...clone(), origin: "not a url" }), ["origin is not a valid URL"]);
 });

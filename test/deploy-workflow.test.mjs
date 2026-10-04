@@ -44,3 +44,14 @@ test("observability PATCH expands secret-backed authorization and propagates HTT
     assert.match(missingToken.stderr, /CLOUDFLARE_API_TOKEN is required/);
   }
 });
+
+test("deploy job verifies the production Auth.md discovery chain after deploying", () => {
+  const deploy = workflow.split("  deploy:\n")[1];
+  assert.ok(deploy, "deploy job exists");
+  const deployIndex = deploy.indexOf("command: deploy");
+  const verifyIndex = deploy.indexOf("- name: Verify production Auth.md discovery chain");
+  assert.ok(deployIndex > -1 && verifyIndex > deployIndex, "verification runs after deployment");
+  const verify = deploy.slice(verifyIndex);
+  assert.match(verify, /node scripts\/verify-deployment\.mjs https:\/\/hussamfaroug\.com/);
+  assert.match(verify, /exit 1/);
+});

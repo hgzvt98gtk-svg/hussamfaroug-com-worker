@@ -17,7 +17,9 @@ function markdownResponse(text) {
 
 export function authMd(origin) {
   return markdownResponse([
-    "# Auth.md",
+    "# hussamfaroug.com auth.md",
+    "",
+    "You are an agent. This document describes **agentic registration** for Hussam Faroug's public, read-only website: discover, then register manually, then read public content. There is no token exchange, claim ceremony, or revocation step because those services do not exist.",
     "",
     "This is Hussam Faroug's public, read-only website. No credentials or bearer tokens are required to read its public content and discovery metadata.",
     "",
@@ -38,11 +40,13 @@ export function authMd(origin) {
     "## Agent registration",
     "",
     "1. Read " + origin + "/.well-known/oauth-protected-resource and follow authorization_servers to " + origin + "/.well-known/oauth-authorization-server.",
-    "2. Follow agent_auth.register_uri to " + origin + "/auth.md#agent-registration for these manual instructions. This is a documentation URL: read it with GET; do not POST registration requests.",
+    "2. Read the agent_auth block. agent_auth.skill is " + origin + "/auth.md (this document). Follow agent_auth.register_uri to " + origin + "/auth.md#agent-registration for these manual instructions. This is a documentation URL: read it with GET; do not POST registration requests.",
     "3. To coordinate registration, email mailto:" + CONTACT + " with your agent name, operator contact, intended use, requested scopes, and redirect URIs. Wait for the administrator to confirm provider availability before attempting authentication.",
     "4. Continue reading public content without authentication. Do not send credentials to the advertised placeholder endpoints.",
     "",
-    "Supported automated identity types: none (identity_types_supported is empty). Supported issued credential types: none (credential_types_supported is empty). Anonymous public reading does not register an agent or issue credentials.",
+    "Supported identity types: anonymous only (agent_auth.identity_types_supported is [\"anonymous\"]). Anonymous agents read public content without registering or authenticating.",
+    "Supported credential types: none (agent_auth.credential_types_supported and agent_auth.anonymous.credential_types_supported are [\"none\"]). No credential, token, or identity assertion is issued.",
+    "The protected resource metadata lists bearer_methods_supported [\"header\"] only to describe how a separately configured provider's tokens would be presented; this site does not require or validate bearer tokens.",
     "Claim and revocation URLs are omitted because no claim or credential revocation service is implemented. Contact the administrator for manual registration changes or cancellation. Do not send secrets, access tokens, or private keys.",
     "",
     "## MCP tool discovery",
@@ -79,9 +83,11 @@ export function oauthAuthorizationServer(origin) {
     response_types_supported: ["code", "token"],
     token_endpoint_auth_methods_supported: ["none"],
     agent_auth: {
+      skill: origin + "/auth.md",
       register_uri: origin + "/auth.md#agent-registration",
-      identity_types_supported: [],
-      credential_types_supported: []
+      identity_types_supported: ["anonymous"],
+      credential_types_supported: ["none"],
+      anonymous: { credential_types_supported: ["none"] }
     }
   });
 }
@@ -91,6 +97,7 @@ export function oauthProtectedResource(origin) {
     resource: origin,
     authorization_servers: [origin],
     scopes_supported: ["openid", "profile"],
+    bearer_methods_supported: ["header"],
     resource_documentation: origin + "/auth.md"
   });
 }
