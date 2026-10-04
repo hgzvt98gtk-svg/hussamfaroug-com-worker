@@ -89,10 +89,11 @@ function mdLabel(value, trim = true) {
 function mdRu(href, base) {
   if (href === null || href.trim() === "") return null;
   href = mdAttribute(href);
-  if (/[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i.test(href)) return null;
+  var unsafeDestination = /[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i;
+  if (unsafeDestination.test(href)) return null;
   try {
     var destination = new URL(href, base);
-    if (!["http:", "https:"].includes(destination.protocol)) return null;
+    if (!["http:", "https:"].includes(destination.protocol) || unsafeDestination.test(destination.href)) return null;
     return destination.href.replace(/[\\()[\]\s<>]/g, function(char) {
       if (char === "[" || char === "]") return "\\" + char;
       return encodeURIComponent(char).replace(/[()]/g, value => "%" + value.charCodeAt(0).toString(16).toUpperCase());
@@ -109,6 +110,14 @@ export async function convertMd(html, url) {
   var markerPattern = new RegExp(marker + "(\\d+)\\u0000", "g");
   function protect(value) {
     return marker + (protectedText.push(value) - 1) + "\u0000";
+  }
+  function code(content, block) {
+    var text = mdDec(mdStripTags(content).trim());
+    var length = block ? 3 : 1;
+    for (var run of text.match(/`+/g) || []) length = Math.max(length, run.length + 1);
+    var delimiter = "`".repeat(length);
+    var padding = block ? "\n" : /^`|`$/.test(text) ? " " : "";
+    return protect(delimiter + padding + text + padding + delimiter);
   }
   function anchor(_, quote, href, content) {
     var label = mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false)).join("");
@@ -164,10 +173,10 @@ export async function convertMd(html, url) {
     return "\n\n" + "#".repeat(Number(level)) + " " + protect(containerText(content)) + "\n\n";
   });
   body = body.replace(mdPatterns.pre, function(_, content) {
-    return "\n\n```\n" + mdStripTags(content).trim() + "\n```\n\n";
+    return "\n\n" + code(content, true) + "\n\n";
   });
   body = body.replace(mdPatterns.code, function(_, content) {
-    return "`" + mdStripTags(content).trim() + "`";
+    return code(content, false);
   });
   body = body.replace(mdPatterns.blockquote, function(_, content) {
     return "\n\n> " + protect(containerText(content)) + "\n\n";
@@ -191,7 +200,7 @@ export async function convertMd(html, url) {
     return "\n";
   });
   body = mdStripTags(body);
-  body = mdDec(body);
+  body = body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\[\]]/g, "\\$&")).join("");
   body = body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
   body = body.replace(markerPattern, (_, index) => protectedText[Number(index)]);
   return (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");

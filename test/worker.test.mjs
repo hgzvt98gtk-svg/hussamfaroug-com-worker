@@ -315,6 +315,19 @@ test("Markdown rejects unsupported, obfuscated, and malformed destinations", asy
   }
 });
 
+test("Markdown rejects mixed-encoding and URL-normalized malformed destinations", async () => {
+  for (const destination of [
+    "&#x6a;ava&#115;cript&colon;alert(1)", "java&#x73;cript&#58alert(1)",
+    "java&#x09;script&colon;alert(1)", "java&NewLine;script&#x3a;alert(1)",
+    "java&amp;#x73;cript&colon;alert(1)", "javascript&#xZZ;alert(1)",
+    "https://%26colon;/", "https://%26%23106;/", "https://%EF%BF%BD/"
+  ]) {
+    const markdown = await convertMd(`<main><a href="${destination}">Safe label</a><img src="${destination}" alt="Safe alt"></main>`, "https://site.example/page");
+    assert.equal(markdown, "Safe labelSafe alt", destination);
+    assert.doesNotMatch(renderMarkdown(markdown), /<(?:a|img)\b/i, destination);
+  }
+});
+
 test("Markdown destinations use parser attributes, URL normalization and delimiter encoding", async () => {
   const cases = [
     ["/relative?q=one&amp;two=2#part", "https://site.example/relative?q=one&two=2#part"],
@@ -358,7 +371,7 @@ test("Markdown labels and alt text cannot inject link syntax after entity decodi
 });
 
 test("Markdown container cleanup cannot resurrect unsafe destinations", async () => {
-  for (const tag of ["h2", "blockquote", "strong", "em", "li"]) {
+  for (const tag of ["h2", "blockquote", "strong", "em", "li", "p", "span"]) {
     for (const label of [
       "<a href='javascript:bad'>run</a>)",
       "[<a>run</a>](javascript:bad)",
@@ -366,6 +379,8 @@ test("Markdown container cleanup cannot resurrect unsafe destinations", async ()
       "<strong><a href='data:bad'>run</a>)</strong>",
       "&#91;run&#93;&#40;javascript&colon;bad&#41;",
       "[run](javascript:bad)", "\\[run](vbscript:bad)",
+      "&#91;run&#93;&#40;java&#115;cript&colon;bad&#41;",
+      "![run](java&#x73;cript&#58;bad)",
       "&amp;#91;run&amp;#93;(data:bad)"
     ]) {
       const content = `<${tag}>${label}</${tag}>`;
@@ -390,6 +405,28 @@ test("rendered Markdown preserves validated destination semantics and linked ima
   assert.match(rendered, /src="https:\/\/site.example\/%E8%B7%AF%E5%BE%84\?q=%F0%9F%99%82"/);
   assert.equal((rendered.match(/<a\b/g) || []).length, 1);
   assert.equal((rendered.match(/<img\b/g) || []).length, 1);
+});
+
+test("Markdown escapes bare link syntax while preserving code and validated destinations", async () => {
+  const payload = "[run](java&#115;cript&colon;bad)";
+  const markdown = await convertMd(`<main>${payload}<p>![run](javascript:bad)</p><a href="/safe">safe</a><img src="/safe.png" alt="safe"></main>`, "https://site.example");
+  const rendered = renderMarkdown(markdown);
+  assert.equal((rendered.match(/<a\b/g) || []).length, 1);
+  assert.equal((rendered.match(/<img\b/g) || []).length, 1);
+  assert.match(rendered, /href="https:\/\/site.example\/safe"/);
+  assert.match(rendered, /src="https:\/\/site.example\/safe.png"/);
+
+  for (const [tag, text] of [
+    ["code", "[run](javascript:bad)"], ["pre", "[run](javascript:bad)"],
+    ["code", "`[run](javascript:bad)`"],
+    ["pre", "```\n[run](javascript:bad)\n```"]
+  ]) {
+    const code = await convertMd(`<main><${tag}>${text}</${tag}></main>`, "https://site.example");
+    const output = renderMarkdown(code);
+    assert.doesNotMatch(output, /<(?:a|img)\b/i, `${tag}: ${code}`);
+    assert.match(output, /<code>/);
+    assert.ok(output.includes(tag === "pre" ? `${text}\n` : text), output);
+  }
 });
 
 test("Markdown conversion strips tags and escapes remaining angle brackets", async () => {
