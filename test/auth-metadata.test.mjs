@@ -20,6 +20,7 @@ test("manual instructions allow Markdown formatting and wording changes", async 
   data.authMarkdown = [
     "# Authentication",
     "",
+    `[OpenID configuration](${origin}/.well-known/openid-configuration)`,
     `[Resource metadata](${origin}/.well-known/oauth-protected-resource)`,
     `[Authorization server](${origin}/.well-known/oauth-authorization-server)`,
     "",
@@ -89,6 +90,7 @@ test("Auth.md must contain a discoverable registration section, contact and disc
     text => text.replace("## Agent registration", "## Contact"),
     text => text.replaceAll("mailto:", ""),
     text => text.replaceAll(/\bmanual(?:ly)?\b/gi, "automatic"),
+    text => text.replaceAll(origin + "/.well-known/openid-configuration", ""),
     text => text.replaceAll(origin + "/.well-known/oauth-protected-resource", ""),
     text => text.replaceAll(origin + "/.well-known/oauth-authorization-server", "")
   ]) {
