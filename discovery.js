@@ -6,8 +6,8 @@ export const SITE_INFO_TOOL = Object.freeze({
 
 const LINKS = [
   { path: "/.well-known/openid-configuration", rel: "service-meta", type: "application/json", title: "OpenID Connect Discovery", description: "Phase 1 authentication discovery metadata" },
-  { path: "/.well-known/oauth-authorization-server", rel: "oauth-authorization-server", type: "application/json", title: "OAuth Authorization Server Discovery", description: "Issuer, OAuth endpoints, flows, and scopes" },
-  { path: "/.well-known/oauth-protected-resource", rel: "oauth-protected-resource", type: "application/json", title: "OAuth Protected Resource Metadata", description: "Resource identifier and authorization server discovery" },
+  { path: "/.well-known/oauth-authorization-server", rel: "oauth-authorization-server", type: "application/json", title: "OAuth Authorization Server Discovery", description: "Issuer and manual agent registration metadata; no OAuth service is implemented" },
+  { path: "/.well-known/oauth-protected-resource", rel: "oauth-protected-resource", type: "application/json", title: "OAuth Protected Resource Metadata", description: "Public resource identifier, discovery link, and documentation" },
   { path: "/.well-known/mcp/server-card.json", rel: "service-meta", type: "application/json", title: "Browser MCP Server Card", description: "Browser-only WebMCP capabilities and tool input schemas" },
   { path: "/.well-known/api-catalog", rel: "api-catalog", type: "application/linkset+json", title: "Public API Linkset", description: "Links to implemented public discovery resources" },
   { path: "/.well-known/agent-card.json", rel: "agent", type: "application/json", title: "Public Site Metadata", description: "Public site information, not an agent-to-agent service" },

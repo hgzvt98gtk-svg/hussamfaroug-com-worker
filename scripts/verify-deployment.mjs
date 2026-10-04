@@ -53,12 +53,17 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
 
   const targetOrigin = base.origin;
   const metadata = {};
-  const request = (path, accept) => fetchImpl(new URL(path, targetOrigin), {
-    method: "GET",
-    redirect: "manual",
-    headers: { accept },
-    signal: AbortSignal.timeout(timeoutMs)
-  });
+  const verificationId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const request = (path, accept) => {
+    const url = new URL(path, targetOrigin);
+    url.searchParams.set("_verify", verificationId);
+    return fetchImpl(url, {
+      method: "GET",
+      redirect: "manual",
+      headers: { accept, "cache-control": "no-cache" },
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  };
 
   async function checkJson(path, accept, validate) {
     let valid = false;

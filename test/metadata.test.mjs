@@ -54,7 +54,6 @@ test("OAuth and MCP discovery endpoints return public JSON through Worker GET an
           assert.deepEqual(data, {
             resource: host,
             authorization_servers: [host],
-            scopes_supported: ["openid", "profile"],
             resource_documentation: host + "/auth.md"
           });
         } else if (path.endsWith("server-card.json")) {
@@ -66,13 +65,6 @@ test("OAuth and MCP discovery endpoints return public JSON through Worker GET an
         } else {
           assert.deepEqual(data, {
             issuer: host,
-            authorization_endpoint: host + "/.well-known/authorize",
-            token_endpoint: host + "/.well-known/token",
-            jwks_uri: host + "/.well-known/jwks",
-            grant_types_supported: ["implicit", "authorization_code"],
-            scopes_supported: ["openid", "profile"],
-            response_types_supported: ["code", "token"],
-            token_endpoint_auth_methods_supported: ["none"],
             agent_auth: {
               skill: host + "/auth.md",
               register_uri: host + "/auth.md#agent-registration",
@@ -99,7 +91,6 @@ test("OAuth protected resource metadata is delivered directly by the Worker", as
   assert.deepEqual(await response.json(), {
     resource: origin,
     authorization_servers: [origin],
-    scopes_supported: ["openid", "profile"],
     resource_documentation: origin + "/auth.md"
   });
 });
@@ -160,7 +151,7 @@ test("skills index links authentication and MCP metadata while retaining browser
   assert.match(await skillResponse.text(), /executes in the browser/);
 });
 
-test("auth.md documents discovery, manual registration, and separate signature verification", async () => {
+test("root auth.md documents manual registration and the non-OAuth service boundary", async () => {
   const response = await worker.fetch(new Request(origin + "/auth.md"), {});
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Content-Type"), "text/markdown");
@@ -168,30 +159,31 @@ test("auth.md documents discovery, manual registration, and separate signature v
   assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*");
   const auth = await response.text();
   assert.match(auth, /^# Auth\.md\n/);
-  assert.ok(auth.indexOf("## Disclaimer") < auth.indexOf("## OpenID Connect"));
-  assert.match(auth, /\*\*Important:\*\* This Worker does not implement OAuth token issuance, an OpenID Connect provider, or automated agent registration/);
-  assert.match(auth, /endpoints do not function; do not attempt to authenticate/);
-  assert.match(auth, /registration is manual only/i);
+  assert.ok(auth.indexOf("## Disclaimer") < auth.indexOf("## Agent registration"));
+  assert.match(auth, /\*\*Important:\*\* This Worker does not implement OAuth authorization, token issuance, an OpenID Connect provider, or automated agent registration/);
+  assert.match(auth, /do not advertise a functioning authorization or token service/);
+  assert.match(auth, /manual registration/);
   for (const heading of [
     "Disclaimer",
-    "OpenID Connect / OAuth 2.0 registration",
     "Agent registration",
+    "OAuth discovery metadata",
     "MCP tool discovery",
     "HTTP message signature verification",
-    "Contact for credential registration"
+    "Contact for manual registration"
   ]) assert.ok(auth.includes("## " + heading));
   assert.match(auth, /public, read-only/);
   assert.match(auth, /No credentials or bearer tokens are required/);
   assert.match(auth, /when signing is configured/);
-  assert.match(auth, /Phase 1 publishes discovery metadata only/);
-  assert.match(auth, /does not implement an OAuth authorization server/);
+  assert.match(auth, /does not implement OAuth authorization/);
   assert.match(auth, /no automated credential issuance/);
   assert.match(auth, /admin@hussamfaroug\.com/);
-  assert.match(auth, /not OAuth token verification keys/);
+  assert.match(auth, /cannot verify OAuth tokens/);
   assert.match(auth, /identity_types_supported is empty/);
   assert.match(auth, /credential_types_supported is empty/);
   assert.match(auth, /Claim and revocation URLs are omitted/);
   assert.match(auth, /do not POST registration requests/);
+  assert.match(auth, new RegExp(origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/auth\\.md#agent-registration"));
+  assert.doesNotMatch(auth, /authorization code flow|implicit flow|token endpoint|jwks_uri/i);
   for (const path of [
     "/.well-known/openid-configuration", "/.well-known/oauth-authorization-server",
     "/.well-known/oauth-protected-resource", "/.well-known/mcp/server-card.json",

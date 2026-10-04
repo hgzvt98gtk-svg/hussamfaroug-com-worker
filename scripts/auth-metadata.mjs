@@ -43,12 +43,24 @@ export function validateAuthMetadataChain({ origin, protectedResource, authoriza
       issues.push("agent_auth must not advertise unsupported credential types");
     }
   }
-  if (authorizationServer && (
-    Object.hasOwn(authorizationServer, "registration_endpoint") ||
-    Object.hasOwn(authorizationServer, "claim_endpoint") ||
-    Object.hasOwn(authorizationServer, "revocation_endpoint")
-  )) {
-    issues.push("authorization server must omit unimplemented registration, claim and revocation endpoints");
+  const unsupportedAuthorizationServerFields = [
+    "authorization_endpoint",
+    "token_endpoint",
+    "jwks_uri",
+    "grant_types_supported",
+    "response_types_supported",
+    "scopes_supported",
+    "token_endpoint_auth_methods_supported",
+    "registration_endpoint",
+    "claim_endpoint",
+    "revocation_endpoint"
+  ];
+  if (authorizationServer && unsupportedAuthorizationServerFields.some(field =>
+    Object.hasOwn(authorizationServer, field))) {
+    issues.push("authorization server metadata must not advertise unimplemented OAuth, registration, claim or revocation services");
+  }
+  if (protectedResource && Object.hasOwn(protectedResource, "scopes_supported")) {
+    issues.push("protected resource metadata must not advertise unsupported OAuth scopes");
   }
 
   const markdown = typeof authMarkdown === "string" ? authMarkdown : "";
@@ -68,6 +80,9 @@ export function validateAuthMetadataChain({ origin, protectedResource, authoriza
     if (!markdown.includes(origin + path)) {
       issues.push("root /auth.md is missing the discovery link " + path);
     }
+  }
+  if (!markdown.includes(origin + "/auth.md#agent-registration")) {
+    issues.push("root /auth.md is missing the manual registration link");
   }
 
   return issues;
