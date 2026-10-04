@@ -158,9 +158,10 @@ credentials. A2A, HTTP MCP, and legacy credential service paths remain 404.
 
 The Worker emits structured JSON metrics to `console.log` (visible in Cloudflare
 Workers Logs when observability logging is enabled). Each isolate tracks total
-requests, HTML/Markdown requests, rate-limit rejections, conversion and retry
-errors, successful retries, and conversion count/minimum/average/maximum
-duration. Conversion averages cover conversions only, not all requests.
+requests, HTML/Markdown requests, rate-limit rejections, upstream 5xx and origin
+configuration errors, conversion and retry errors, successful retries, and
+conversion count/minimum/average/maximum duration. Conversion averages cover
+conversions only, not all requests.
 
 Counters are in-memory and per isolate: they reset when an isolate restarts and
 are not globally aggregated. A metrics record is logged after each 1,000

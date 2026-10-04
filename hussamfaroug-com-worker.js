@@ -72,7 +72,10 @@ async function handleRequest(request, env, headOnly = false) {
     });
   }
   var proxyOrigin = env.ORIGIN;
-  if (!proxyOrigin) return new Response("Origin configuration unavailable", { status: 500, headers: { "Cache-Control": "no-store" } });
+  if (!proxyOrigin) {
+    recordError("configuration");
+    return new Response("Origin configuration unavailable", { status: 500, headers: { "Cache-Control": "no-store" } });
+  }
   var proxyUrl;
   try {
     proxyUrl = new URL(proxyOrigin);
@@ -83,6 +86,7 @@ async function handleRequest(request, env, headOnly = false) {
     proxyUrl.hash = "";
     if (proxyUrl.origin !== trustedOrigin) throw new Error("Invalid destination");
   } catch {
+    recordError("configuration");
     return new Response("Origin configuration unavailable", { status: 500, headers: { "Cache-Control": "no-store" } });
   }
   var forwardedHeaders = new Headers(request.headers);
@@ -107,6 +111,7 @@ async function handleRequest(request, env, headOnly = false) {
       "Access-Control-Allow-Origin": "*"
     } });
   }
+  if (upstream.status >= 500) recordError("origin");
   var mediaType = (upstream.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
   if (mediaType !== "text/html" || upstream.body === null) {
     var passthroughHeaders = new Headers(upstream.headers);

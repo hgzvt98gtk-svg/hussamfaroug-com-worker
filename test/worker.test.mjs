@@ -89,6 +89,22 @@ test("Worker records Markdown requests and conversion duration", async () => {
   assert.equal(after.conversions_total - before.conversions_total, 1);
 });
 
+test("Worker records upstream server errors", async () => {
+  const before = getMetrics();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("Unavailable", {
+    status: 503,
+    headers: { "Content-Type": "text/plain" }
+  });
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/unavailable"), testEnv);
+    assert.equal(response.status, 503);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(getMetrics().errors_total - before.errors_total, 1);
+});
+
 test("bot-auth signature uses a structured-field byte sequence", async () => {
   const keyPair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
   const privateJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
