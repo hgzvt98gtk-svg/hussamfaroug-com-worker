@@ -320,7 +320,8 @@ curl -i https://hussamfaroug.com/.well-known/mcp/server-card.json
 #   "authorization_servers":["https://hussamfaroug.com"],
 #   "scopes_supported":["openid","profile"],
 #   "resource_documentation":"https://hussamfaroug.com/auth.md"}
-# Authorization server metadata has agent_auth.register_uri pointing to the
+# Authorization server metadata has agent_auth.skill pointing to root /auth.md
+# and agent_auth.register_uri pointing to the
 # GET-only /auth.md#agent-registration guide. Supported identity and credential
 # type lists are empty; claim and revocation URLs are omitted because no such
 # services are implemented.

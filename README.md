@@ -180,17 +180,27 @@ metadata only. **Important:** it does NOT implement:
 The advertised authorize, token, and JWKS endpoints do not function. To add real
 OAuth authentication, configure an external OAuth provider and update the
 discovery endpoints to point to that provider's actual endpoints. The
-authorization server metadata includes an `agent_auth` block whose `register_uri`
-points to `/auth.md#agent-registration`, a GET-only manual registration guide,
+authorization server metadata includes an `agent_auth.skill` link to root
+`/auth.md` for instruction discovery, as used by the WorkOS Auth.md reference.
+The block retains the legacy `register_uri`, which points to
+`/auth.md#agent-registration`, a GET-only manual registration guide,
 not a registration API. `identity_types_supported` and `credential_types_supported`
 are empty because no automated identity registration or credential issuance is
 supported. Claim and revocation URLs are omitted because those services do not
 exist. `/auth.md` opens with a disclaimer and documents manual registration by
 contacting the administrator.
+This is documentation discovery, not an implementation of the WorkOS automated
+registration protocol; checkers requiring a working registration API may still
+report it as unsupported.
 Public content still needs no credentials. A2A, HTTP MCP, and legacy credential
 service paths remain 404.
 
 ## Observability and deployment verification
+
+The deployment workflow runs `node scripts/verify-deployment.mjs https://hussamfaroug.com`
+after deployment and observability setup, failing if the published discovery chain
+or root Auth.md document is missing or inconsistent. The validator checks links,
+manual contact instructions, and unsupported capabilities rather than exact prose.
 
 The Worker emits structured JSON metrics to `console.log` (visible in Cloudflare
 Workers Logs when observability logging is enabled). Each isolate tracks total

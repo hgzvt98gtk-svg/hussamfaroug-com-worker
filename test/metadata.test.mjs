@@ -74,6 +74,7 @@ test("OAuth and MCP discovery endpoints return public JSON through Worker GET an
             response_types_supported: ["code", "token"],
             token_endpoint_auth_methods_supported: ["none"],
             agent_auth: {
+              skill: host + "/auth.md",
               register_uri: host + "/auth.md#agent-registration",
               identity_types_supported: [],
               credential_types_supported: []
@@ -202,8 +203,9 @@ test("agent registration metadata links root instructions without advertising un
   const response = await worker.fetch(new Request(origin + "/.well-known/oauth-authorization-server"), {});
   const { agent_auth } = await response.json();
   assert.deepEqual(Object.keys(agent_auth).sort(), [
-    "credential_types_supported", "identity_types_supported", "register_uri"
+    "credential_types_supported", "identity_types_supported", "register_uri", "skill"
   ]);
+  assert.equal(agent_auth.skill, origin + "/auth.md");
   const registrationUrl = new URL(agent_auth.register_uri);
   assert.equal(registrationUrl.origin, origin);
   assert.equal(registrationUrl.pathname, "/auth.md");
