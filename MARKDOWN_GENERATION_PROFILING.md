@@ -138,6 +138,9 @@ native Workers' HTMLRewriter; it measures the local WASM adapter.
   tests, counting nested subtests).
 - Existing unsafe-URL, entity-decoding, code-delimiter, linked-image, and
   Markdown-injection regressions remain covered. No dependencies were added.
+- CodeQL JavaScript analysis: **zero alerts**. Secret scanning found no secrets
+  in the changed files. The automated review backend was unavailable (configured
+  model missing); a separate read-only code review found no significant issues.
 
 ## Recommendations
 
