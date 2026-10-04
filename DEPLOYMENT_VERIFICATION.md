@@ -320,7 +320,10 @@ curl -i https://hussamfaroug.com/.well-known/mcp/server-card.json
 #   "authorization_servers":["https://hussamfaroug.com"],
 #   "scopes_supported":["openid","profile"],
 #   "resource_documentation":"https://hussamfaroug.com/auth.md"}
-# Authorization server metadata has no agent_auth block (no registration API exists)
+# Authorization server metadata has agent_auth.register_uri pointing to the
+# GET-only /auth.md#agent-registration guide. Supported identity and credential
+# type lists are empty; claim and revocation URLs are omitted because no such
+# services are implemented.
 # MCP transport is browser-only, not an HTTP MCP service
 
 # Test 8.3: MCP endpoint
@@ -334,8 +337,10 @@ curl -i https://hussamfaroug.com/.well-known/api-catalog
 # Expected: HTTP 200, JSON with implemented services (WebMCP, etc.)
 ```
 
-Discovery is metadata only: a separate provider is required for OAuth token
-issuance and validation. Do not treat discovery success as authentication readiness.
+Discovery is metadata only: registration is coordinated manually by email, and
+a separate provider is required for OAuth token issuance and validation. Do not
+treat discovery success or anonymous public reading as authentication readiness
+or credential issuance.
 
 ---
 
@@ -346,10 +351,13 @@ issuance and validation. Do not treat discovery success as authentication readin
 ```bash
 curl -i https://hussamfaroug.com/auth.md
 
-# Expected: HTTP 200, Content-Type: text/markdown or text/plain
+# Expected: HTTP 200, Content-Type: text/markdown
 # Body starts with # Auth.md and documents OAuth/OIDC registration,
 # browser MCP discovery, HTTP message signature verification, and registration contact.
 # It must explain that Phase 1 does not implement token issuance or validation.
+# The GET-only manual registration guide must match agent_auth.register_uri;
+# identity_types_supported and credential_types_supported remain empty, and
+# claim/revocation URLs stay omitted while those services are unimplemented.
 # A "## Disclaimer" section near the top states there is no token issuance,
 # OpenID Connect provider, or automated registration (manual email only):
 curl -s https://hussamfaroug.com/auth.md | grep -i "disclaimer\|not implement\|not function"

@@ -1,6 +1,7 @@
 import { lookup, resolve4 } from "node:dns/promises";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
+import { validateAuthMetadataChain } from "./auth-metadata.mjs";
 
 const ORIGIN = "https://hussamfaroug.com";
 const TIMEOUT_MS = 8000;
@@ -191,6 +192,7 @@ export async function runSmoke({ fetchImpl = fetch, dns = { lookup, resolve4 } }
     ],
     counts: { attempted: 0, httpResponses: 0, dnsErrors: 0, transportErrors: 0, bodyErrors: 0, skipped: 0 },
     checks: [],
+    metadataChain: { ok: false, skipped: false, issues: [] },
     timingSamples: [],
     diagnostics: []
   };
@@ -218,6 +220,7 @@ export async function runSmoke({ fetchImpl = fetch, dns = { lookup, resolve4 } }
   );
   let staticVerified = false;
   let anonymousMarkdown;
+  const metadata = {};
   let failedNetwork = false;
   for (const spec of specs) {
     if (failedNetwork || (spec.nonHtml && !spec.staticProbe && !staticVerified)) {
@@ -250,6 +253,16 @@ export async function runSmoke({ fetchImpl = fetch, dns = { lookup, resolve4 } }
     try {
       const text = await bodyText(response);
       item.issues = checkResponse(spec, response, text);
+      if (spec.path === "/.well-known/oauth-protected-resource" ||
+          spec.path === "/.well-known/oauth-authorization-server") {
+        try {
+          metadata[spec.path] = JSON.parse(text);
+        } catch {
+          // checkResponse records the invalid JSON response.
+        }
+      } else if (spec.path === "/auth.md") {
+        metadata[spec.path] = text;
+      }
       if (spec.root && spec.method === "GET" && !spec.identity && response.ok) {
         report.timingSamples.push({ accept: item.accept, milliseconds: Math.round((performance.now() - start) * 10) / 10 });
       }
@@ -266,11 +279,22 @@ export async function runSmoke({ fetchImpl = fetch, dns = { lookup, resolve4 } }
     }
     report.checks.push(item);
   }
+  if (failedNetwork) {
+    report.metadataChain.skipped = true;
+  } else {
+    report.metadataChain.issues = validateAuthMetadataChain({
+      origin: ORIGIN,
+      protectedResource: metadata["/.well-known/oauth-protected-resource"],
+      authorizationServer: metadata["/.well-known/oauth-authorization-server"],
+      authMarkdown: metadata["/auth.md"]
+    });
+    report.metadataChain.ok = report.metadataChain.issues.length === 0;
+  }
   if (failedNetwork) report.diagnostics = await diagnoseNetwork(fetchImpl, dns);
   report.staticCoverage = staticVerified ? "verified favicon.ico" : "unverified; static identity checks skipped";
   report.diagnosticHttpResponses = report.diagnostics.filter(item => item.httpStatus !== undefined).length;
   report.ok = !failedNetwork && report.counts.bodyErrors === 0 &&
-    report.checks.every(item => item.issues.length === 0);
+    report.checks.every(item => item.issues.length === 0) && report.metadataChain.ok;
   return report;
 }
 
