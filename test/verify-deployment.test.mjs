@@ -36,6 +36,9 @@ test("deployment verifier checks Phase 1 endpoints and the healthy Worker path",
   assert.ok(requests.every(item => new URL(item.url).searchParams.has("_verify")));
   assert.ok(requests.every(item => item.options.headers["cache-control"] === "no-cache"));
   assert.equal(report.allEndpoints.length, 8);
+  assert.match(report.allEndpoints[5].endpoint, /retry behavior not exercised/);
+  assert.match(report.allEndpoints[6].endpoint, /rate limit threshold not stress-tested/);
+  assert.match(report.allEndpoints[7].endpoint, /metrics logging is not publicly exposed/);
 });
 
 test("deployment verifier fails OAuth discovery when protected resource metadata is missing", async () => {
@@ -55,6 +58,22 @@ test("deployment verifier fails OAuth discovery when protected resource metadata
     { endpoint: "/.well-known/openid-configuration", status: "✅" },
     { endpoint: "/.well-known/oauth-protected-resource", status: "❌", detail: "HTTP 404" }
   ]);
+});
+
+test("deployment verifier requires the OpenID issuer to match the requested origin", async () => {
+  const report = await verifyDeployment(origin, {
+    fetchImpl: async url => url.pathname === "/.well-known/openid-configuration"
+      ? json({ issuer: "https://other.example" })
+      : responses.get(url.pathname)?.() || new Response("Worker healthy")
+  });
+
+  assert.equal(report.success, false);
+  assert.equal(report.results.phase1.oauth, false);
+  assert.deepEqual(report.allEndpoints[0], {
+    endpoint: "/.well-known/openid-configuration",
+    status: "❌",
+    detail: "Unexpected response"
+  });
 });
 
 test("deployment verifier rejects inconsistent and malformed Auth.md discovery metadata", async () => {

@@ -99,7 +99,7 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
   const oauthDiscovery = await checkJson(
     "/.well-known/openid-configuration",
     "application/json",
-    data => Boolean(data && typeof data.issuer === "string" && data.issuer)
+    data => Boolean(data && data.issuer === targetOrigin)
   );
   const protectedResource = await checkJson(
     "/.well-known/oauth-protected-resource",
@@ -173,26 +173,26 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
     results.phase3.metrics = healthy;
     if (response.body) response.body.cancel().catch(() => {});
     results.allEndpoints.push({
-      endpoint: `${rootPath} (retry smoke test)`,
+      endpoint: `${rootPath} (root response check; retry behavior not exercised)`,
       status: healthy ? "✅" : "❌",
       ...(!healthy ? { detail: `HTTP ${response.status}` } : {})
     });
     results.allEndpoints.push({
-      endpoint: `${rootPath} (rate limit middleware smoke test)`,
+      endpoint: `${rootPath} (root response check; rate limit threshold not stress-tested)`,
       status: results.phase2.rateLimit ? "✅ (threshold not stress-tested)" : "❌",
       ...(!results.phase2.rateLimit ? { detail: `HTTP ${response.status}` } : {})
     });
     results.allEndpoints.push({
-      endpoint: "Worker health (metrics logging is not publicly exposed)",
+      endpoint: "Root response (metrics logging is not publicly exposed)",
       status: healthy ? "✅" : "❌",
       ...(!healthy ? { detail: `HTTP ${response.status}` } : {})
     });
   } catch (error) {
     const detail = error?.name || "Request failed";
     results.allEndpoints.push(
-      { endpoint: `${rootPath} (retry smoke test)`, status: "❌", detail },
-      { endpoint: `${rootPath} (rate limit middleware smoke test)`, status: "❌", detail },
-      { endpoint: "Worker health (metrics logging is not publicly exposed)", status: "❌", detail }
+      { endpoint: `${rootPath} (root response check; retry behavior not exercised)`, status: "❌", detail },
+      { endpoint: `${rootPath} (root response check; rate limit threshold not stress-tested)`, status: "❌", detail },
+      { endpoint: "Root response (metrics logging is not publicly exposed)", status: "❌", detail }
     );
   }
 

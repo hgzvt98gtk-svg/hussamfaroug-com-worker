@@ -74,6 +74,7 @@ export function validateAuthMetadataChain({ origin, protectedResource, authoriza
     issues.push("root /auth.md is missing manual registration contact instructions");
   }
   for (const path of [
+    "/.well-known/openid-configuration",
     "/.well-known/oauth-protected-resource",
     "/.well-known/oauth-authorization-server"
   ]) {
