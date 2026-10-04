@@ -5,6 +5,12 @@ import worker from "../hussamfaroug-com-worker.js";
 import { botAuth } from "../bot-auth.js";
 import { convertMd } from "../markdown.js";
 import { MAX_HTML_BYTES } from "../proxy.js";
+import MarkdownIt from "markdown-it";
+
+const markdownParser = new MarkdownIt({ html: true });
+// Do not let the renderer's own URL filter hide converter regressions.
+markdownParser.validateLink = () => true;
+const renderMarkdown = value => markdownParser.render(value);
 
 const testEnv = { ORIGIN: "https://hgzvt98gtk-svg-github-io.pages.dev" };
 
@@ -302,7 +308,8 @@ test("Markdown rejects unsupported, obfuscated, and malformed destinations", asy
     "vbscript:msgbox(1)", "data:text/html,unsafe", "file:///etc/passwd",
     "blob:https://site.example/id", "mailto:user@example.com", "tel:123", "ftp://site.example",
     "https://[invalid", "http://", "https://example.com:99999/", "javascript&amp;colon;alert(1)",
-    "https://example.com/&unknown;", "https://example.com/&constructor;", "/literal&amp;#x3a;", ""
+    "https://example.com/&unknown;", "https://example.com/&constructor;", "/literal&amp;#x3a;", "",
+    "   ", "/path\u0000tail", "/path&#0;tail", "/path&#xD800;tail"
   ]) {
     assert.equal(await convertMd(`<main><a href="${destination}">Safe <b>label</b></a><img src="${destination}" alt="Safe alt"></main>`, "https://site.example/page"), "Safe labelSafe alt", destination);
   }
@@ -348,6 +355,41 @@ test("Markdown labels and alt text cannot inject link syntax after entity decodi
   assert.equal(actual, `[${expected}](https://site.example/safe)![${expected}](https://site.example/safe)`);
   assert.equal(await convertMd('<main><a href="javascript:bad">x](data:bad)[y</a><img src="data:bad" alt="x](data:bad)[y"></main>', "https://site.example"), "x\\]\\(data:bad\\)\\[yx\\]\\(data:bad\\)\\[y");
   assert.equal(await convertMd('<main><a href="/safe">line&#10;break&#127;end</a></main>', "https://site.example"), "[line break end](https://site.example/safe)");
+});
+
+test("Markdown container cleanup cannot resurrect unsafe destinations", async () => {
+  for (const tag of ["h2", "blockquote", "strong", "em", "li"]) {
+    for (const label of [
+      "<a href='javascript:bad'>run</a>)",
+      "[<a>run</a>](javascript:bad)",
+      "<a href='javascript:bad'>x](javascript:bad)[<a>run</a>)</a>",
+      "<strong><a href='data:bad'>run</a>)</strong>",
+      "&#91;run&#93;&#40;javascript&colon;bad&#41;",
+      "[run](javascript:bad)", "\\[run](vbscript:bad)",
+      "&amp;#91;run&amp;#93;(data:bad)"
+    ]) {
+      const content = `<${tag}>${label}</${tag}>`;
+      const html = `<main>${tag === "li" ? `<ul>${content}</ul>` : content}</main>`;
+      const markdown = await convertMd(html, "https://site.example/page");
+      const rendered = renderMarkdown(markdown);
+      assert.doesNotMatch(rendered, /<(?:a|img)\b/i, `${tag}: ${markdown}`);
+      assert.match(rendered, /run/);
+    }
+  }
+  const title = await convertMd("<title>[run](javascript:bad)</title><main>Text</main>", "https://site.example");
+  assert.doesNotMatch(renderMarkdown(title), /<a\b/i);
+  const formatted = await convertMd('<main><h2><strong>Bold</strong> <a href="/safe">safe</a></h2><blockquote><em>Italic</em></blockquote></main>', "https://site.example");
+  assert.match(renderMarkdown(formatted), /<h2><strong>Bold<\/strong> <a href="https:\/\/site.example\/safe">safe<\/a><\/h2>/);
+  assert.match(renderMarkdown(formatted), /<em>Italic<\/em>/);
+});
+
+test("rendered Markdown preserves validated destination semantics and linked images", async () => {
+  const markdown = await convertMd('<main><a href="https://[2001:db8::1]/?a=1&amp;b=2"><img src="/路径?q=🙂" alt="x](javascript:bad)"></a></main>', "https://site.example");
+  const rendered = renderMarkdown(markdown);
+  assert.match(rendered, /href="https:\/\/\[2001:db8::1\]\/\?a=1&amp;b=2"/);
+  assert.match(rendered, /src="https:\/\/site.example\/%E8%B7%AF%E5%BE%84\?q=%F0%9F%99%82"/);
+  assert.equal((rendered.match(/<a\b/g) || []).length, 1);
+  assert.equal((rendered.match(/<img\b/g) || []).length, 1);
 });
 
 test("Markdown conversion strips tags and escapes remaining angle brackets", async () => {
@@ -701,7 +743,7 @@ test("HTML media type classification is exact and case-insensitive for GET and H
         for (const [contentType, isHtml] of [
           ["text/html", true], ["Text/HTML; charset=UTF-8", true],
           ["  TEXT/HTML  ; charset=utf-8", true], ["text/html ; profile=\"example\"", true],
-          ["application/text/html", false], ["text/htmlish", false],
+          ["application/text/html", false], ["text/htmlish", false], ["text/html-invalid", false],
           ["application/json; note=text/html", false], ["text/plain; text/html", false],
           ["text/html, application/json", false], [null, false]
         ]) {

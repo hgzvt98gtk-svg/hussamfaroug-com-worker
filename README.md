@@ -157,9 +157,10 @@ double-slash destination confinement, HEAD, cache headers, origin timeouts,
 and centrally provisioned signing keys. Local tests do not establish deployed
 edge normalization, KV propagation, or shared-cache behavior.
 
-### Markdown benchmark (Phase 2.2)
+### Historical Markdown benchmark (Phase 2.2)
 
-Measured on Node v22.23.3, Linux 6.17.0-1022-azure x86-64, Intel Xeon Platinum
+The following results were recorded on the old task branch, not newly measured
+or deployed gains. Measured on Node v22.23.3, Linux 6.17.0-1022-azure x86-64, Intel Xeon Platinum
 8573C, using the locked html-rewriter-wasm parser. CPU profiling first exposed a
 Node ReadableStream queue artifact in the test adapter; the benchmark below
 buffers parser output to exclude that artifact. The buffered baseline profile
@@ -187,12 +188,18 @@ To reproduce from this repository after `npm ci`
 (baseline is the Phase 3.3 commit; fetch its history if needed):
 
 ```sh
-BASE_REF=431c0b1 node --input-type=module <<'NODE'
+BASE_REF=431c0b1ac17f6b82a7f0ed8042c32ed906a4c0ae node --input-type=module <<'NODE'
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { HTMLRewriter as Parser } from 'html-rewriter-wasm';
 import { convertMd as after } from './markdown.js';
+console.log({ runtime: process.version,
+  baseline: execFileSync('git', ['rev-parse', process.env.BASE_REF], { encoding: 'utf8' }).trim(),
+  candidate: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+  candidateSourceSha256: createHash('sha256').update(readFileSync('markdown.js')).digest('hex'),
+  workingTree: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim() || 'clean' });
 const source = execFileSync('git', ['show', `${process.env.BASE_REF}:markdown.js`], { encoding: 'utf8' });
 const { convertMd: before } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 globalThis.HTMLRewriter = class {
@@ -235,6 +242,94 @@ NODE
 
 For a CPU profile, add `--cpu-prof --cpu-prof-dir=/tmp` before
 `--input-type=module`; keep profiling artifacts outside the repository.
+
+### Corrective integration investigation (2026-10-04)
+
+At investigation time `main` was
+`432d109cb94e7bd09ce61c6ceb629f0e574edac5` and the old task branch
+`copilot/implement-security-hardening-performance` ended at
+`7c391cf3a0ff1de218bae2bb94806d3d7e9ae74b`. Only this corrective PR was open.
+PR #41 merged at **2026-10-03 23:33:50 UTC**, with parents
+`a94aca8f76251e5c1b43b1fc522c00ab386ac3ea` and
+`b71e59e1ce48cb720f6007eeddd08d1f87002923`.
+Its two integrated commits were the initial plan
+`e2df5b5291cd19ab99461e25039862af83ea39bf` (23:30:40 UTC) and Phase 3.1
+`b71e59e1ce48cb720f6007eeddd08d1f87002923` (23:32:17 UTC).
+The first-parent diff contains README.md, the Worker and worker tests only:
+**3 files, +122/-10**. `markdown.js` is byte-identical before/after that merge;
+Phase 2.2 was **not** integrated in the deployed merge.
+
+The six later commits are descendants of the merged head, but not ancestors
+of main. All were authored/committed after the merge (times below are UTC):
+
+| Original full commit | Time on 2026-10-03 | Change |
+|---|---|---|
+| `c74de0622a44da931036c750a33cb9f8a3e3fa41` | 23:36:35 | Phase 3.2 URL/label handling |
+| `431c0b1ac17f6b82a7f0ed8042c32ed906a4c0ae` | 23:37:30 | Phase 3.3 forwarding fields |
+| `cd97ca86714bf70ceeb5d70ca79b4699e8635d5d` | 23:41:13 | Phase 2.2 regex/text slicing |
+| `0f3a1198bc28076c3ec2e51058304ab6b75b5224` | 23:41:52 | Phase 2.3 media type |
+| `3319912302d4a4b603808baa8b5f084b712518be` | 23:46:14 | Query, IPv6, linked images |
+| `7c391cf3a0ff1de218bae2bb94806d3d7e9ae74b` | 23:47:34 | Explicit backslash handling |
+
+Thus the evidence supports **merging before task completion**, not speculative
+merge conflicts. This corrective branch cherry-picked these verified commits
+without conflicts, then added container/heading/title syntax-injection
+regressions and fixes. These are local safety findings, not demonstrated live XSS.
+The existing Phase 3.1 cache policy, HEAD optimization and CSP policy remain.
+
+[Deployment run 37162179890](https://github.com/hgzvt98gtk-svg/hussamfaroug-com-worker/actions/runs/37162179890)
+successfully deployed the above main commit with Worker version
+`9bb53c2a-f680-4218-86b7-e2cf952cf721`. Its observability PATCH returned
+`success: true` with invocation logs, tracing and query redaction enabled.
+This is the latest accessible deployment evidence, not a fresh authenticated
+query of current Cloudflare state. Invocation ingestion remains **unverified**:
+no existing read authorization for logs is available here. This corrective PR
+is **not merged or deployed**; do not attribute its tests to the live version.
+
+### Read-only live verification
+
+From an unrestricted machine with Node 22, in the repository root, run:
+
+```sh
+node scripts/live-smoke.mjs
+```
+
+No dependencies, credentials or Cloudflare API access are needed. The script
+accepts **no target arguments** and follows no redirects: it only probes the
+fixed public site, with GET/HEAD, sequentially. It checks anonymous and grouped
+dummy-identity HTML/Markdown requests, copied CDN cache controls, descriptive
+`/auth.md`, representative retired OAuth/OIDC/MCP paths (404 and no-store),
+public `/robots.txt` and a fixed `/favicon.ico` candidate. Static identity
+coverage is skipped unless that candidate is actually a successful non-HTML
+resource. Grouping all seven identity headers does not prove isolation for
+each header separately, or arbitrary headers; local mocks test each recognized
+header separately. Public Worker-generated metadata intentionally stays public.
+It never changes ORIGIN, sends adversarial content, writes settings or deploys.
+
+Exit 0 means all attempted HTTP assertions passed; exit 1 means an assertion or
+network failure. Inspect `staticCoverage` and skipped counts even on success.
+The report separates HTTP responses, DNS/transport failures and incomplete
+bodies. Only successful, complete anonymous root GETs yield timing samples
+(two HTML, one Markdown at most); they are client wall time, not Worker CPU.
+For HEAD no-body behavior use its explicit checks, not a claimed percentage
+speedup. A DNS error is not HTTP status 000 and is not endpoint latency.
+Read the report's limitations before interpreting a result.
+
+In this agent, the smoke attempt returned **0 HTTP responses**, 1 DNS error,
+27 skipped checks and **no timing samples**. System lookup returned ENOTFOUND,
+the configured resolver returned EREFUSED, and Google DoH and the known host
+example.com also returned ENOTFOUND. Independent web-fetch attempts to Google
+and Cloudflare DoH failed host lookup as well. This supports an agent-network
+resolution limitation; authoritative/public DNS answers and live site behavior
+remain **unverified**, not established as broken. No resolver, DNS record or
+Cloudflare production setting was changed. Run the script outside this
+restricted network before release; before merge it observes the old deployment.
+
+Final local validation: **75 tests passed, 0 failed/skipped/cancelled**
+(`npm test`, Node v22.23.3; 66 top-level plus 9 nested tests), including seven
+smoke-script mock tests and rendered Markdown destination checks. No standalone
+lint/build command exists. Mock header capture establishes what fetch receives,
+not what Cloudflare later adds, and does not establish live origin header trust.
 
 ## Cron trigger
 

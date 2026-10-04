@@ -6,6 +6,7 @@
     "test": "node --test"
   },
   "devDependencies": {
-    "html-rewriter-wasm": "0.4.1"
+    "html-rewriter-wasm": "0.4.1",
+    "markdown-it": "15.0.2"
   }
 }

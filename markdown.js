@@ -87,9 +87,9 @@ function mdLabel(value, trim = true) {
 }
 
 function mdRu(href, base) {
-  if (href === null || href === "") return null;
+  if (href === null || href.trim() === "") return null;
   href = mdAttribute(href);
-  if (/[\u0000-\u001f\u007f-\u009f]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i.test(href)) return null;
+  if (/[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i.test(href)) return null;
   try {
     var destination = new URL(href, base);
     if (!["http:", "https:"].includes(destination.protocol)) return null;
@@ -110,8 +110,22 @@ export async function convertMd(html, url) {
   function protect(value) {
     return marker + (protectedText.push(value) - 1) + "\u0000";
   }
+  function anchor(_, quote, href, content) {
+    var label = mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false)).join("");
+    return protect(href ? "[" + label + "](" + href + ")" : label);
+  }
+  function containerText(content) {
+    // Convert anchors before container cleanup can discard their safety boundary.
+    content = content.replace(mdPatterns.anchor, anchor);
+    content = content.replace(mdPatterns.format, function(match, tag, inner) {
+      if (inner === void 0) return " ";
+      var text = containerText(inner);
+      return protect(tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*");
+    });
+    return mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false).replace(/\\&/g, "&")).join("");
+  }
   var title = (html.match(mdPatterns.title) || [])[1] || "";
-  title = mdDec(title.trim());
+  title = title.trim();
   var body = await new HTMLRewriter()
     .on("script, style, head, header, nav, footer, aside, svg, meta, link", {
       element(el) {
@@ -145,9 +159,9 @@ export async function convertMd(html, url) {
     if (match) body = match[1];
   }
   var markdown = "";
-  if (title) markdown += "# " + title + "\n\n";
+  if (title) markdown += "# " + mdLabel(title).replace(/\\&/g, "&") + "\n\n";
   body = body.replace(mdPatterns.heading, function(_, level, content) {
-    return "\n\n" + "#".repeat(Number(level)) + " " + mdClean(content) + "\n\n";
+    return "\n\n" + "#".repeat(Number(level)) + " " + protect(containerText(content)) + "\n\n";
   });
   body = body.replace(mdPatterns.pre, function(_, content) {
     return "\n\n```\n" + mdStripTags(content).trim() + "\n```\n\n";
@@ -156,22 +170,19 @@ export async function convertMd(html, url) {
     return "`" + mdStripTags(content).trim() + "`";
   });
   body = body.replace(mdPatterns.blockquote, function(_, content) {
-    return "\n\n> " + mdClean(content) + "\n\n";
+    return "\n\n> " + protect(containerText(content)) + "\n\n";
   });
-  body = body.replace(mdPatterns.anchor, function(_, quote, href, content) {
-    var label = mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false)).join("");
-    return protect(href ? "[" + label + "](" + href + ")" : label);
-  });
+  body = body.replace(mdPatterns.anchor, anchor);
   body = body.replace(mdPatterns.list, function(_, type, content) {
     var items = content.match(mdPatterns.listItem) || [];
     var ordered = type.toLowerCase() === "ol";
     return "\n\n" + items.map(function(item, index) {
-      return (ordered ? index + 1 + ". " : "- ") + mdClean(item);
+      return (ordered ? index + 1 + ". " : "- ") + protect(containerText(item));
     }).join("\n") + "\n\n";
   });
   body = body.replace(mdPatterns.format, function(match, tag, content) {
     if (content !== void 0) {
-      var text = mdClean(content);
+      var text = protect(containerText(content));
       return tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*";
     }
     if (/^<hr/i.test(match)) return "\n\n---\n\n";
