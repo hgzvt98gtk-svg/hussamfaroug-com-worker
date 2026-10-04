@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkResponse, IDENTITY_HEADERS, networkFailure, RETIRED_PATHS, runSmoke } from "../scripts/live-smoke.mjs";
-import { isLegacyDiscoveryPath } from "../metadata.js";
+import { checkResponse, DISCOVERY_PATHS, IDENTITY_HEADERS, networkFailure, RETIRED_PATHS, runSmoke } from "../scripts/live-smoke.mjs";
+import { authMd, isLegacyDiscoveryPath, wellKnown } from "../metadata.js";
 
 function reply(url, options) {
   const path = new URL(url).pathname;
+  if (path === "/auth.md") return authMd(new URL(url).origin);
+  if (DISCOVERY_PATHS.includes(path)) return wellKnown(new Request(url));
   const identity = Boolean(options.headers.authorization);
   const retired = RETIRED_PATHS.includes(path);
   const headers = new Headers({
@@ -15,9 +17,7 @@ function reply(url, options) {
   });
   if (path === "/") headers.set("vary", "Accept");
   if (identity && ["/", "/favicon.ico"].includes(path)) headers.set("cdn-cache-control", "private, no-store");
-  const text = path === "/auth.md" ?
-    "Public, read-only. No credentials or bearer tokens are required. There is no credential registration, OAuth authorization server, OpenID Connect provider. It is not an HTTP service. The directory does not grant access or authenticate visitors." :
-    path === "/" && options.headers.accept === "text/markdown" ? "# Site" : "site";
+  const text = path === "/" && options.headers.accept === "text/markdown" ? "# Site" : "site";
   return new Response(options.method === "HEAD" ? null : text, { status: retired ? 404 : 200, headers });
 }
 
@@ -38,8 +38,8 @@ test("fixed target checks are sequential, read-only, grouped dummy identities an
     }
   });
   assert.equal(report.ok, true);
-  assert.equal(report.counts.httpResponses, 28);
-  assert.equal(report.counts.attempted, 28);
+  assert.equal(report.counts.httpResponses, 29);
+  assert.equal(report.counts.attempted, 29);
   assert.equal(report.counts.skipped, 0);
   assert.equal(report.timingSamples.length, 3);
   assert.equal(report.staticCoverage, "verified favicon.ico");
@@ -57,6 +57,8 @@ test("fixed target checks are sequential, read-only, grouped dummy identities an
     for (const [key, value] of Object.entries(IDENTITY_HEADERS)) assert.equal(request.options.headers[key], value);
   }
   assert.ok(RETIRED_PATHS.every(isLegacyDiscoveryPath));
+  assert.ok(DISCOVERY_PATHS.every(path => !isLegacyDiscoveryPath(path)));
+  assert.ok(DISCOVERY_PATHS.every(path => requests.some(item => new URL(item.url).pathname === path)));
 });
 
 test("DNS failures are not HTTP responses or timing samples and trigger bounded fixed diagnostics", async () => {
@@ -70,7 +72,7 @@ test("DNS failures are not HTTP responses or timing samples and trigger bounded 
     dns: { lookup: async () => { throw error; }, resolve4: async () => { throw error; } }
   });
   assert.equal(report.ok, false);
-  assert.deepEqual(report.counts, { attempted: 1, httpResponses: 0, dnsErrors: 1, transportErrors: 0, bodyErrors: 0, skipped: 27 });
+  assert.deepEqual(report.counts, { attempted: 1, httpResponses: 0, dnsErrors: 1, transportErrors: 0, bodyErrors: 0, skipped: 28 });
   assert.equal(report.timingSamples.length, 0);
   assert.equal(report.diagnostics.length, 4);
   assert.deepEqual(urls, [
@@ -86,12 +88,23 @@ test("HTTP errors remain responses, not DNS failures or successful timing sample
     fetchImpl: async () => new Response("unavailable", { status: 503, headers: { "content-type": "text/plain" } })
   });
   assert.equal(report.ok, false);
-  assert.equal(report.counts.httpResponses, 26);
+  assert.equal(report.counts.httpResponses, 27);
   assert.equal(report.counts.dnsErrors, 0);
   assert.equal(report.counts.transportErrors, 0);
   assert.equal(report.counts.skipped, 2);
   assert.equal(report.timingSamples.length, 0);
   assert.equal(report.diagnostics.length, 0);
+});
+
+test("discovery smoke checks reject invalid JSON and missing cache/CORS headers", () => {
+  assert.deepEqual(checkResponse({ discovery: true }, new Response("invalid"), ""), [
+    "discovery metadata lacks public one-hour caching",
+    "discovery metadata lacks public CORS",
+    "discovery metadata is not valid JSON"
+  ]);
+  assert.deepEqual(checkResponse({ discovery: true }, new Response("{}", { headers: {
+    "cache-control": "public, max-age=3600", "access-control-allow-origin": "*"
+  } }), "{}"), []);
 });
 
 test("copied CDN headers require both private and no-store; public metadata is exempt", () => {
@@ -122,7 +135,7 @@ test("body failures count the received HTTP response but never time incomplete b
       return reply(url, options);
     }
   });
-  assert.equal(report.counts.httpResponses, 28);
+  assert.equal(report.counts.httpResponses, 29);
   assert.equal(report.counts.bodyErrors, 5);
   assert.equal(report.counts.dnsErrors, 0);
   assert.equal(report.timingSamples.length, 0);

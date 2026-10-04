@@ -17,27 +17,78 @@ function markdownResponse(text) {
 
 export function authMd(origin) {
   return markdownResponse([
-    "# Public access",
+    "# Auth.md",
     "",
     "This is Hussam Faroug's public, read-only website. No credentials or bearer tokens are required to read its public content and discovery metadata.",
     "",
-    "There is no credential registration, OAuth authorization server, OpenID Connect provider, or agent-to-agent service.",
+    "## OpenID Connect / OAuth 2.0 registration",
     "",
-    "## Browser tool",
+    "Discover the issuer, authorization endpoint, token endpoint, JWKS URI, flows, and scopes at " + origin + "/.well-known/openid-configuration or " + origin + "/.well-known/oauth-authorization-server.",
+    "Protected resource metadata: " + origin + "/.well-known/oauth-protected-resource.",
+    "Phase 1 publishes discovery metadata only. This Worker does not implement an OAuth authorization server, OpenID Connect provider, token issuance, or token validation. The advertised authorize, token, and jwks paths require a separately configured provider before use.",
+    "Before authenticating, contact the administrator to confirm provider availability and register your agent and redirect URIs. Once enabled, use the authorization code flow with the registered redirect URI and openid/profile scopes, then exchange the code at the token endpoint. Public clients use token endpoint authentication method none; no client secret is required. Prefer authorization code with PKCE over the advertised implicit flow.",
+    "OAuth token verification must use the provider's jwks_uri and validate issuer, audience, signature, and expiry. HTTP message signature keys are not OAuth token verification keys.",
+    "",
+    "## MCP tool discovery",
     "",
     SITE_INFO_TOOL.description,
+    "MCP server card: " + origin + "/.well-known/mcp/server-card.json.",
+    "Tool input schemas and capabilities are listed in the card; skill documentation is indexed at " + origin + "/.well-known/agent-skills/.",
     "The tool is registered only in browsers that support navigator.modelContext.provideContext. It is not an HTTP service.",
     "",
-    "## HTTP message signature directory",
+    "## HTTP message signature verification",
     "",
     "Public verification keys are available at " + origin + "/.well-known/http-message-signatures-directory when signing is configured.",
     "These keys describe HTTP message signatures, not user identity, OAuth tokens, or credential registration. The directory does not grant access or authenticate visitors.",
+    "Use the directory's public Ed25519 JWK to verify the Signature over the components listed in Signature-Input, checking the key identifier and created/expires timestamps. Never request or transmit private signing keys.",
     "",
     "Public resource links: " + origin + "/.well-known/api-catalog",
     "",
-    "Contact: " + CONTACT,
+    "## Contact for credential registration",
+    "",
+    "Contact: " + CONTACT + " (mailto:" + CONTACT + ").",
+    "Provide your agent name, operator contact, intended use, requested scopes, and redirect URIs. Do not email secrets, access tokens, or private keys. Registration is coordinated manually; no automated credential issuance, identity assertion, claim, or revocation endpoint is implemented in Phase 1.",
     ""
   ].join("\n"));
+}
+
+export function oauthAuthorizationServer(origin) {
+  return cachedJson({
+    issuer: origin,
+    authorization_endpoint: origin + "/.well-known/authorize",
+    token_endpoint: origin + "/.well-known/token",
+    jwks_uri: origin + "/.well-known/jwks",
+    grant_types_supported: ["implicit", "authorization_code"],
+    scopes_supported: ["openid", "profile"],
+    response_types_supported: ["code", "token"],
+    token_endpoint_auth_methods_supported: ["none"],
+    agent_auth: {
+      register_uri: origin + "/auth.md",
+      identity_types_supported: [],
+      credential_types_supported: []
+    }
+  });
+}
+
+export function oauthProtectedResource(origin) {
+  return cachedJson({
+    resource: origin,
+    authorization_servers: [origin],
+    scopes_supported: ["openid", "profile"],
+    resource_documentation: origin + "/auth.md"
+  });
+}
+
+export function mcpServerCard(origin) {
+  return cachedJson({
+    serverInfo: {
+      name: "HussamFaroug WebMCP",
+      version: "1.0.0",
+      description: "Browser-only, read-only tools for Hussam Faroug's public website at " + origin
+    },
+    capabilities: { tools: [SITE_INFO_TOOL] },
+    transport: { type: "browser", endpoint: "navigator.modelContext.provideContext" }
+  });
 }
 
 function apiCatalog(origin) {
@@ -67,7 +118,14 @@ function agentSkillsIndex(origin) {
       description: SITE_INFO_TOOL.description,
       url: origin + "/.well-known/agent-skills/get_site_info/SKILL.md",
       execution: "browser-only"
-    }]
+    }],
+    links: {
+      openidConfiguration: origin + "/.well-known/openid-configuration",
+      oauthAuthorizationServer: origin + "/.well-known/oauth-authorization-server",
+      oauthProtectedResource: origin + "/.well-known/oauth-protected-resource",
+      mcpServerCard: origin + "/.well-known/mcp/server-card.json",
+      authMd: origin + "/auth.md"
+    }
   });
 }
 
@@ -118,7 +176,10 @@ export async function wellKnown(request, botAuth) {
   if (path === "health") return cachedJson({ status: "ok", timestamp: new Date().toISOString() }, { cacheControl: "no-store" });
   if (path === "api-catalog") return apiCatalog(origin);
   if (path === "ai-catalog.json") return aiCatalog(origin);
-  if (path === "agent-skills/index.json") return agentSkillsIndex(origin);
+  if (path === "openid-configuration" || path === "oauth-authorization-server") return oauthAuthorizationServer(origin);
+  if (path === "oauth-protected-resource") return oauthProtectedResource(origin);
+  if (path === "mcp/server-card.json") return mcpServerCard(origin);
+  if (path === "agent-skills/" || path === "agent-skills/index.json") return agentSkillsIndex(origin);
   if (path === "agent-skills/get_site_info/SKILL.md") return siteInfoSkill(origin);
   if (path === "agent-card.json") return agentCard(origin);
   return null;

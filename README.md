@@ -120,10 +120,21 @@ hosts). Structural query ampersands remain intact. Labels are Markdown-escaped,
 and generated links are restored after the prose entity-decoding pass so it
 cannot resurrect rejected schemes or link syntax.
 
-Public discovery describes implemented resources and the browser-only
-`get_site_info` WebMCP tool. OAuth/OIDC, A2A, and HTTP MCP services are not
-implemented; their former endpoints return 404 instead of advertising support.
-`/auth.md` documents public access, not credential registration.
+Phase 1 discovery publishes `/.well-known/openid-configuration`,
+`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`,
+and `/.well-known/mcp/server-card.json`. These JSON resources are CORS-enabled and
+publicly cacheable for one hour, and linked from the shared catalogs and
+`/.well-known/agent-skills/` (also available as `agent-skills/index.json`).
+The MCP card describes the existing browser-only `get_site_info` WebMCP tool,
+not an HTTP MCP transport. `/auth.md` documents discovery, manual registration
+contact, and HTTP message signature verification.
+
+Discovery metadata does not implement authentication: a separate OAuth/OIDC
+provider must implement the advertised authorize, token, and JWKS endpoints
+before agents can obtain or validate tokens. The `agent_auth` registration URI
+points to instructions, not a registration API; its empty supported identity and
+credential lists indicate no automated issuance. Public content still needs no
+credentials. A2A, HTTP MCP, and legacy credential service paths remain 404.
 
 ## Signing key provisioning and rotation
 
@@ -326,7 +337,8 @@ No dependencies, credentials or Cloudflare API access are needed. The script
 accepts **no target arguments** and follows no redirects: it only probes the
 fixed public site, with GET/HEAD, sequentially. It checks anonymous and grouped
 dummy-identity HTML/Markdown requests, copied CDN cache controls, descriptive
-`/auth.md`, representative retired OAuth/OIDC/MCP paths (404 and no-store),
+`/auth.md`, OAuth/OIDC and MCP discovery JSON (200, public one-hour cache and CORS),
+representative retired service paths (404 and no-store),
 public `/robots.txt` and a fixed `/favicon.ico` candidate. Static identity
 coverage is skipped unless that candidate is actually a successful non-HTML
 resource. Grouping all seven identity headers does not prove isolation for
