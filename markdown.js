@@ -113,6 +113,7 @@ export async function convertMd(html, url) {
   }
   function code(content, block) {
     var text = mdDec(mdStripTags(content).trim()).replace(markerPattern, (_, index) => protectedText[Number(index)]);
+    if (!block) text = text.replace(/\r\n?|\n/g, " ");
     var length = block ? 3 : 1;
     for (var run of text.match(/`+/g) || []) length = Math.max(length, run.length + 1);
     var delimiter = "`".repeat(length);
@@ -200,7 +201,7 @@ export async function convertMd(html, url) {
     return "\n";
   });
   body = mdStripTags(body);
-  body = body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\[\]]/g, "\\$&")).join("");
+  body = body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\`[\]]/g, "\\$&")).join("");
   body = body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
   body = body.replace(markerPattern, (_, index) => protectedText[Number(index)]);
   return (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");

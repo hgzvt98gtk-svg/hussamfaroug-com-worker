@@ -419,19 +419,29 @@ test("Markdown escapes bare link syntax while preserving code and validated dest
   for (const [tag, text] of [
     ["code", "[run](javascript:bad)"], ["pre", "[run](javascript:bad)"],
     ["code", "`[run](javascript:bad)`"],
+    ["code", "first\n\n[run](javascript:bad)"],
+    ["code", "first\r\n\r\n![run](javascript:bad)"],
     ["pre", "```\n[run](javascript:bad)\n```"]
   ]) {
     const code = await convertMd(`<main><${tag}>${text}</${tag}></main>`, "https://site.example");
     const output = renderMarkdown(code);
     assert.doesNotMatch(output, /<(?:a|img)\b/i, `${tag}: ${code}`);
     assert.match(output, /<code>/);
-    assert.ok(output.includes(tag === "pre" ? `${text}\n` : text), output);
+    assert.ok(output.includes(tag === "pre" ? `${text}\n` : text.replace(/\r\n?|\n/g, " ")), output);
   }
   for (const tag of ["code", "pre"]) {
     const markdown = await convertMd(`<main><${tag}>before<img src="/image.png" alt="diagram">after</${tag}></main>`, "https://site.example");
     const text = "before![diagram](https://site.example/image.png)after";
     assert.equal(markdown, tag === "pre" ? `\`\`\`\n${text}\n\`\`\`` : `\`${text}\``);
     assert.doesNotMatch(renderMarkdown(markdown), /<(?:a|img)\b/i);
+  }
+  for (const html of [
+    "`<code>[run](javascript:bad)</code>",
+    "```\n<pre>[run](javascript:bad)</pre>",
+    "<code>[run](javascript:bad)</code>`"
+  ]) {
+    const markdown = await convertMd(`<main>${html}</main>`, "https://site.example");
+    assert.doesNotMatch(renderMarkdown(markdown), /<(?:a|img)\b/i, markdown);
   }
 });
 
