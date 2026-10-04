@@ -33,6 +33,8 @@ test("deployment verifier checks Phase 1 endpoints and the healthy Worker path",
     "/.well-known/oauth-authorization-server", "/.well-known/mcp/server-card.json", "/auth.md", "/"
   ]);
   assert.ok(requests.every(item => item.options.redirect === "manual"));
+  assert.ok(requests.every(item => new URL(item.url).searchParams.has("_verify")));
+  assert.ok(requests.every(item => item.options.headers["cache-control"] === "no-cache"));
   assert.equal(report.allEndpoints.length, 8);
 });
 
@@ -60,10 +62,16 @@ test("deployment verifier rejects inconsistent and malformed Auth.md discovery m
     ["/.well-known/oauth-protected-resource", data => { data.resource = "https://other.example"; }],
     ["/.well-known/oauth-protected-resource", data => { data.authorization_servers = []; }],
     ["/.well-known/oauth-protected-resource", data => { data.resource_documentation = origin + "/docs/auth.md"; }],
+    ["/.well-known/oauth-protected-resource", data => { data.scopes_supported = ["openid"]; }],
     ["/.well-known/oauth-authorization-server", data => { data.agent_auth.register_uri = origin + "/register"; }],
     ["/.well-known/oauth-authorization-server", data => {
       data.agent_auth.identity_types_supported = ["anonymous"];
       data.revocation_endpoint = origin + "/oauth/revoke";
+    }],
+    ["/.well-known/oauth-authorization-server", data => {
+      data.authorization_endpoint = origin + "/authorize";
+      data.token_endpoint = origin + "/token";
+      data.grant_types_supported = ["authorization_code"];
     }]
   ]) {
     const report = await verifyDeployment(origin, {
@@ -91,6 +99,22 @@ test("deployment verifier rejects inconsistent and malformed Auth.md discovery m
   assert.equal(missingAgentAuth.results.phase1.oauth, false);
   assert.equal(missingAgentAuth.allEndpoints.find(item =>
     item.endpoint === "/.well-known/oauth-authorization-server").status, "❌");
+
+  for (const authText of [
+    authMd(origin).text().then(text => text.replace(origin + "/auth.md#agent-registration", origin + "/register")),
+    authMd(origin).text().then(text => text.replace("## Agent registration", "## Register here"))
+  ]) {
+    const brokenDocument = await authText;
+    const report = await verifyDeployment(origin, {
+      fetchImpl: async url => url.pathname === "/auth.md"
+        ? new Response(brokenDocument, { headers: { "content-type": "text/markdown" } })
+        : responses.get(url.pathname)?.() || new Response("Worker healthy")
+    });
+    assert.equal(report.success, false);
+    assert.equal(report.results.phase1.oauth, false);
+    assert.equal(report.results.phase1.auth, false);
+    assert.equal(report.allEndpoints.find(item => item.endpoint === "/auth.md").status, "❌");
+  }
 });
 
 test("deployment verifier reports malformed and missing endpoint responses as failures", async () => {

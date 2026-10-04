@@ -25,6 +25,7 @@ test("manual instructions allow Markdown formatting and wording changes", async 
     "",
     "### Agent Registration ###",
     "",
+    `[Registration instructions](${origin}/auth.md#agent-registration)`,
     "Contact [the administrator](mailto:admin@example.com) to coordinate registration manually.",
     "Public content needs no credentials. Automated registration and credential services are unavailable."
   ].join("\r\n");
@@ -70,6 +71,9 @@ test("unsupported identity, credential, claim, revocation and registration capab
     ...["claim_endpoint", "revocation_endpoint", "registration_endpoint"].map(key =>
       data => { data.authorizationServer.agent_auth[key] = origin + "/unimplemented"; }),
     ...["registration_endpoint", "claim_endpoint", "revocation_endpoint"].map(key =>
+      data => { data.authorizationServer[key] = origin + "/unimplemented"; }),
+    ...["authorization_endpoint", "token_endpoint", "jwks_uri", "grant_types_supported", "response_types_supported",
+      "scopes_supported", "token_endpoint_auth_methods_supported"].map(key =>
       data => { data.authorizationServer[key] = origin + "/unimplemented"; })
   ]) {
     const data = await chain();

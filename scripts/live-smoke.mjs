@@ -106,7 +106,7 @@ export function checkResponse(spec, response, text) {
   if (spec.auth && response.status === 200) {
     for (const phrase of [
       /public, read-only/i, /no credentials or bearer tokens are required/i,
-      /Phase 1 publishes discovery metadata only/i,
+      /discovery and manual-registration metadata only/i,
       /not an HTTP service/i, /does not grant access or authenticate visitors/i
     ]) {
       if (!phrase.test(text)) issues.push(`auth.md is missing descriptive statement ${phrase.source}`);
