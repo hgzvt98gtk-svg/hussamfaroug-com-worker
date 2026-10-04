@@ -201,7 +201,7 @@ test("CSP: preserves multiple origin policies and augments each effective script
     const sources = getDirectiveSources(directives, index === 1 ? "script-src-elem" : "script-src");
     assert.ok(sources.includes("'self'"));
     assert.ok(sources.includes(nonce));
-    assert.ok(sources.includes("https://challenges.cloudflare.com"));
+    assert.ok(new Set(sources).has("https://challenges.cloudflare.com"));
   }
   assert.equal(getDirectiveSources(parseCSPDirectives(policies[0]), "default-src")[0], "'none'");
   assert.equal(getDirectiveSources(parseCSPDirectives(policies[1]), "object-src")[0], "'none'");
