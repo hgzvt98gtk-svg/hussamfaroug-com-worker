@@ -443,6 +443,12 @@ test("Markdown escapes bare link syntax while preserving code and validated dest
     const markdown = await convertMd(`<main>${html}</main>`, "https://site.example");
     assert.doesNotMatch(renderMarkdown(markdown), /<(?:a|img)\b/i, markdown);
   }
+  for (const tag of ["p", "h2", "blockquote", "strong", "li"]) {
+    const markdown = await convertMd(`<main><${tag}><code>a</code><span><code>\`[run](javascript:bad)</code></span></${tag}></main>`, "https://site.example");
+    const rendered = renderMarkdown(markdown);
+    assert.doesNotMatch(rendered, /<(?:a|img)\b/i, markdown);
+    if (tag !== "h2") assert.equal((rendered.match(/<code>/g) || []).length, 2, markdown);
+  }
 });
 
 test("Markdown conversion strips tags and escapes remaining angle brackets", async () => {

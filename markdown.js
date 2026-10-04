@@ -111,8 +111,11 @@ export async function convertMd(html, url) {
   function protect(value) {
     return marker + (protectedText.push(value) - 1) + "\u0000";
   }
+  function join(parts) {
+    return parts.reduce((text, part) => text + (text.endsWith("`") && part.startsWith("`") ? " " : "") + part, "");
+  }
   function code(content, block) {
-    var text = mdDec(mdStripTags(content).trim()).replace(markerPattern, (_, index) => protectedText[Number(index)]);
+    var text = join(mdDec(mdStripTags(content).trim()).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
     if (!block) text = text.replace(/\r\n?|\n/g, " ");
     var length = block ? 3 : 1;
     for (var run of text.match(/`+/g) || []) length = Math.max(length, run.length + 1);
@@ -121,7 +124,7 @@ export async function convertMd(html, url) {
     return protect(delimiter + padding + text + padding + delimiter);
   }
   function anchor(_, quote, href, content) {
-    var label = mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false)).join("");
+    var label = join(mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false)));
     return protect(href ? "[" + label + "](" + href + ")" : label);
   }
   function containerText(content) {
@@ -132,7 +135,7 @@ export async function convertMd(html, url) {
       var text = containerText(inner);
       return protect(tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*");
     });
-    return mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false).replace(/\\&/g, "&")).join("");
+    return join(mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false).replace(/\\&/g, "&")));
   }
   var title = (html.match(mdPatterns.title) || [])[1] || "";
   title = title.trim();
@@ -203,6 +206,6 @@ export async function convertMd(html, url) {
   body = mdStripTags(body);
   body = body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\`[\]]/g, "\\$&")).join("");
   body = body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
-  body = body.replace(markerPattern, (_, index) => protectedText[Number(index)]);
+  body = join(body.split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
   return (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
