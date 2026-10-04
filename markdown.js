@@ -112,7 +112,7 @@ export async function convertMd(html, url) {
     return marker + (protectedText.push(value) - 1) + "\u0000";
   }
   function code(content, block) {
-    var text = mdDec(mdStripTags(content).trim());
+    var text = mdDec(mdStripTags(content).trim()).replace(markerPattern, (_, index) => protectedText[Number(index)]);
     var length = block ? 3 : 1;
     for (var run of text.match(/`+/g) || []) length = Math.max(length, run.length + 1);
     var delimiter = "`".repeat(length);

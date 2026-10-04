@@ -427,6 +427,12 @@ test("Markdown escapes bare link syntax while preserving code and validated dest
     assert.match(output, /<code>/);
     assert.ok(output.includes(tag === "pre" ? `${text}\n` : text), output);
   }
+  for (const tag of ["code", "pre"]) {
+    const markdown = await convertMd(`<main><${tag}>before<img src="/image.png" alt="diagram">after</${tag}></main>`, "https://site.example");
+    const text = "before![diagram](https://site.example/image.png)after";
+    assert.equal(markdown, tag === "pre" ? `\`\`\`\n${text}\n\`\`\`` : `\`${text}\``);
+    assert.doesNotMatch(renderMarkdown(markdown), /<(?:a|img)\b/i);
+  }
 });
 
 test("Markdown conversion strips tags and escapes remaining angle brackets", async () => {
