@@ -103,7 +103,14 @@ function mdRu(href, base) {
   }
 }
 
-export async function convertMd(html, url, onTiming) {
+export async function convertMd(html, url, onTiming, onPassTiming) {
+  function pass(name, operation) {
+    if (!onPassTiming) return operation();
+    var startedAt = performance.now();
+    var result = operation();
+    onPassTiming(name, performance.now() - startedAt);
+    return result;
+  }
   // Keep generated Markdown out of the later prose tag-stripping and entity-decoding passes.
   var protectedText = [];
   var marker = "\u0000" + crypto.randomUUID() + ":";
@@ -168,35 +175,35 @@ export async function convertMd(html, url, onTiming) {
     .transform(new Response(html)).text();
   if (onTiming) onTiming("rewriter", performance.now() - rewriterStartedAt);
   var markdownStartedAt = onTiming ? performance.now() : 0;
-  var match = body.match(mdPatterns.main);
-  if (match) body = match[2];
-  else {
+  body = pass("extract", function() {
+    var match = body.match(mdPatterns.main);
+    if (match) return match[2];
     match = body.match(mdPatterns.body);
-    if (match) body = match[1];
-  }
+    return match ? match[1] : body;
+  });
   var markdown = "";
   if (title) markdown += "# " + mdLabel(title).replace(/\\&/g, "&") + "\n\n";
-  body = body.replace(mdPatterns.heading, function(_, level, content) {
+  body = pass("heading", () => body.replace(mdPatterns.heading, function(_, level, content) {
     return "\n\n" + "#".repeat(Number(level)) + " " + protect(containerText(content)) + "\n\n";
-  });
-  body = body.replace(mdPatterns.pre, function(_, content) {
+  }));
+  body = pass("pre", () => body.replace(mdPatterns.pre, function(_, content) {
     return "\n\n" + code(content, true) + "\n\n";
-  });
-  body = body.replace(mdPatterns.code, function(_, content) {
+  }));
+  body = pass("code", () => body.replace(mdPatterns.code, function(_, content) {
     return code(content, false);
-  });
-  body = body.replace(mdPatterns.blockquote, function(_, content) {
+  }));
+  body = pass("blockquote", () => body.replace(mdPatterns.blockquote, function(_, content) {
     return "\n\n> " + protect(containerText(content)) + "\n\n";
-  });
-  body = body.replace(mdPatterns.anchor, anchor);
-  body = body.replace(mdPatterns.list, function(_, type, content) {
+  }));
+  body = pass("anchor", () => body.replace(mdPatterns.anchor, anchor));
+  body = pass("list", () => body.replace(mdPatterns.list, function(_, type, content) {
     var items = content.match(mdPatterns.listItem) || [];
     var ordered = type.toLowerCase() === "ol";
     return "\n\n" + items.map(function(item, index) {
       return (ordered ? index + 1 + ". " : "- ") + protect(containerText(item));
     }).join("\n") + "\n\n";
-  });
-  body = body.replace(mdPatterns.format, function(match, tag, content) {
+  }));
+  body = pass("format", () => body.replace(mdPatterns.format, function(match, tag, content) {
     if (content !== void 0) {
       var text = protect(containerText(content));
       return tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*";
@@ -205,12 +212,12 @@ export async function convertMd(html, url, onTiming) {
     if (/^<p/i.test(match)) return "\n\n";
     if (/^<\/p/i.test(match)) return "\n";
     return "\n";
-  });
-  body = mdStripTags(body);
-  body = body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\`[\]]/g, "\\$&")).join("");
-  body = body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
-  body = join(body.split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
-  var result = (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }));
+  body = pass("stripTags", () => mdStripTags(body));
+  body = pass("decodeProse", () => body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\`[\]]/g, "\\$&")).join(""));
+  body = pass("whitespace", () => body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim());
+  body = pass("restoreProtected", () => join(body.split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part)));
+  var result = pass("escapeOutput", () => (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;"));
   if (onTiming) onTiming("markdown", performance.now() - markdownStartedAt);
   return result;
 }
