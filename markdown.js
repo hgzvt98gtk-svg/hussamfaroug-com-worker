@@ -89,10 +89,11 @@ function mdLabel(value, trim = true) {
 function mdRu(href, base) {
   if (href === null || href.trim() === "") return null;
   href = mdAttribute(href);
-  if (/[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i.test(href)) return null;
+  var unsafeDestination = /[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i;
+  if (unsafeDestination.test(href)) return null;
   try {
     var destination = new URL(href, base);
-    if (!["http:", "https:"].includes(destination.protocol)) return null;
+    if (!["http:", "https:"].includes(destination.protocol) || unsafeDestination.test(destination.href)) return null;
     return destination.href.replace(/[\\()[\]\s<>]/g, function(char) {
       if (char === "[" || char === "]") return "\\" + char;
       return encodeURIComponent(char).replace(/[()]/g, value => "%" + value.charCodeAt(0).toString(16).toUpperCase());
@@ -110,8 +111,20 @@ export async function convertMd(html, url) {
   function protect(value) {
     return marker + (protectedText.push(value) - 1) + "\u0000";
   }
+  function join(parts) {
+    return parts.reduce((text, part) => text + (text.endsWith("`") && part.startsWith("`") ? " " : "") + part, "");
+  }
+  function code(content, block) {
+    var text = join(mdDec(mdStripTags(content).trim()).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
+    if (!block) text = text.replace(/\r\n?|\n/g, " ");
+    var length = block ? 3 : 1;
+    for (var run of text.match(/`+/g) || []) length = Math.max(length, run.length + 1);
+    var delimiter = "`".repeat(length);
+    var padding = block ? "\n" : /^`|`$/.test(text) ? " " : "";
+    return protect(delimiter + padding + text + padding + delimiter);
+  }
   function anchor(_, quote, href, content) {
-    var label = mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false)).join("");
+    var label = join(mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false)));
     return protect(href ? "[" + label + "](" + href + ")" : label);
   }
   function containerText(content) {
@@ -122,7 +135,7 @@ export async function convertMd(html, url) {
       var text = containerText(inner);
       return protect(tag.toLowerCase() === "strong" || tag.toLowerCase() === "b" ? "**" + text + "**" : "*" + text + "*");
     });
-    return mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false).replace(/\\&/g, "&")).join("");
+    return join(mdClean(content).split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : mdLabel(part, false).replace(/\\&/g, "&")));
   }
   var title = (html.match(mdPatterns.title) || [])[1] || "";
   title = title.trim();
@@ -164,10 +177,10 @@ export async function convertMd(html, url) {
     return "\n\n" + "#".repeat(Number(level)) + " " + protect(containerText(content)) + "\n\n";
   });
   body = body.replace(mdPatterns.pre, function(_, content) {
-    return "\n\n```\n" + mdStripTags(content).trim() + "\n```\n\n";
+    return "\n\n" + code(content, true) + "\n\n";
   });
   body = body.replace(mdPatterns.code, function(_, content) {
-    return "`" + mdStripTags(content).trim() + "`";
+    return code(content, false);
   });
   body = body.replace(mdPatterns.blockquote, function(_, content) {
     return "\n\n> " + protect(containerText(content)) + "\n\n";
@@ -191,8 +204,8 @@ export async function convertMd(html, url) {
     return "\n";
   });
   body = mdStripTags(body);
-  body = mdDec(body);
+  body = body.split(markerPattern).map((part, index) => index % 2 ? marker + part + "\u0000" : mdDec(part).replace(/[\\`[\]]/g, "\\$&")).join("");
   body = body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").replace(/^[ \t]+/gm, "").replace(/[ \t]+$/gm, "").trim();
-  body = body.replace(markerPattern, (_, index) => protectedText[Number(index)]);
+  body = join(body.split(markerPattern).map((part, index) => index % 2 ? protectedText[Number(part)] : part));
   return (markdown + body).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
