@@ -191,8 +191,8 @@ node scripts/verify-deployment.mjs https://hussamfaroug.com
 ```
 
 The script checks the OAuth discovery document, OAuth protected resource
-metadata (without following redirects), MCP server card, `/auth.md`,
-and a healthy root request; it prints JSON and exits nonzero if checks fail.
+metadata, MCP server card, `/auth.md`, and a healthy root request without
+following redirects; it prints JSON and exits nonzero if checks fail.
 The root check confirms the Worker responds through its retry and rate-limit
 middleware, but does not force a transient origin failure or send a burst of
 requests to trigger the rate limit. It cannot observe metrics logging from the
