@@ -315,7 +315,12 @@ curl -i https://hussamfaroug.com/.well-known/openid-configuration
 curl -i https://hussamfaroug.com/.well-known/oauth-protected-resource
 curl -i https://hussamfaroug.com/.well-known/mcp/server-card.json
 
-# Expected: HTTP 200, same JSON/cache/CORS headers
+# Expected: HTTP 200 (no redirect or challenge page), same JSON/cache/CORS headers
+# Protected resource body: {"resource":"https://hussamfaroug.com",
+#   "authorization_servers":["https://hussamfaroug.com"],
+#   "scopes_supported":["openid","profile"],
+#   "resource_documentation":"https://hussamfaroug.com/auth.md"}
+# Authorization server metadata has no agent_auth block (no registration API exists)
 # MCP transport is browser-only, not an HTTP MCP service
 
 # Test 8.3: MCP endpoint
@@ -345,6 +350,9 @@ curl -i https://hussamfaroug.com/auth.md
 # Body starts with # Auth.md and documents OAuth/OIDC registration,
 # browser MCP discovery, HTTP message signature verification, and registration contact.
 # It must explain that Phase 1 does not implement token issuance or validation.
+# A "## Disclaimer" section near the top states there is no token issuance,
+# OpenID Connect provider, or automated registration (manual email only):
+curl -s https://hussamfaroug.com/auth.md | grep -i "disclaimer\|not implement\|not function"
 ```
 
 ---

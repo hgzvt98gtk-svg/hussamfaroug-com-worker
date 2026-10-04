@@ -21,6 +21,12 @@ export function authMd(origin) {
     "",
     "This is Hussam Faroug's public, read-only website. No credentials or bearer tokens are required to read its public content and discovery metadata.",
     "",
+    "## Disclaimer",
+    "",
+    "**Important:** This Worker does not implement OAuth token issuance, an OpenID Connect provider, or automated agent registration.",
+    "The advertised authorize, token, and jwks endpoints do not function; do not attempt to authenticate through them. No registration, claim, or revocation API exists, so the authorization server metadata intentionally omits an agent_auth block.",
+    "Agent registration is manual only: email the contact below.",
+    "",
     "## OpenID Connect / OAuth 2.0 registration",
     "",
     "Discover the issuer, authorization endpoint, token endpoint, JWKS URI, flows, and scopes at " + origin + "/.well-known/openid-configuration or " + origin + "/.well-known/oauth-authorization-server.",
@@ -61,12 +67,7 @@ export function oauthAuthorizationServer(origin) {
     grant_types_supported: ["implicit", "authorization_code"],
     scopes_supported: ["openid", "profile"],
     response_types_supported: ["code", "token"],
-    token_endpoint_auth_methods_supported: ["none"],
-    agent_auth: {
-      register_uri: origin + "/auth.md",
-      identity_types_supported: [],
-      credential_types_supported: []
-    }
+    token_endpoint_auth_methods_supported: ["none"]
   });
 }
 
