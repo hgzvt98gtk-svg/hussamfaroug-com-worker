@@ -5,6 +5,12 @@ import worker from "../hussamfaroug-com-worker.js";
 import { botAuth } from "../bot-auth.js";
 import { convertMd } from "../markdown.js";
 import { MAX_HTML_BYTES } from "../proxy.js";
+import MarkdownIt from "markdown-it";
+
+const markdownParser = new MarkdownIt({ html: true });
+// Do not let the renderer's own URL filter hide converter regressions.
+markdownParser.validateLink = () => true;
+const renderMarkdown = value => markdownParser.render(value);
 
 const testEnv = { ORIGIN: "https://hgzvt98gtk-svg-github-io.pages.dev" };
 
@@ -293,6 +299,99 @@ test("Markdown conversion handles formatting, nested markup, links, and lists", 
   assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
 });
 
+test("Markdown rejects unsupported, obfuscated, and malformed destinations", async () => {
+  for (const destination of [
+    "javascript:alert(1)", "JaVaScRiPt:alert(1)", "java&#115;cript:alert(1)",
+    "java&#x73;cript:alert(1)", "javascript&colon;alert(1)", "java&Tab;script:alert(1)",
+    "java&NewLine;script:alert(1)", "java&#9script:alert(1)", "java\nscript:alert(1)",
+    "&#106;&#97;vascript:alert(1)", "javascript&#x3a;alert(1)", "javascript&#58alert(1)",
+    "vbscript:msgbox(1)", "data:text/html,unsafe", "file:///etc/passwd",
+    "blob:https://site.example/id", "mailto:user@example.com", "tel:123", "ftp://site.example",
+    "https://[invalid", "http://", "https://example.com:99999/", "javascript&amp;colon;alert(1)",
+    "https://example.com/&unknown;", "https://example.com/&constructor;", "/literal&amp;#x3a;", "",
+    "   ", "/path\u0000tail", "/path&#0;tail", "/path&#xD800;tail"
+  ]) {
+    assert.equal(await convertMd(`<main><a href="${destination}">Safe <b>label</b></a><img src="${destination}" alt="Safe alt"></main>`, "https://site.example/page"), "Safe labelSafe alt", destination);
+  }
+});
+
+test("Markdown destinations use parser attributes, URL normalization and delimiter encoding", async () => {
+  const cases = [
+    ["/relative?q=one&amp;two=2#part", "https://site.example/relative?q=one&two=2#part"],
+    ["../路径?词=🙂#片", "https://site.example/%E8%B7%AF%E5%BE%84?%E8%AF%8D=%F0%9F%99%82#%E7%89%87"],
+    ["#fragment", "https://site.example/dir/page#fragment"],
+    ["HtTpS://EXAMPLE.com/path", "https://example.com/path"],
+    ["http://example.com/path", "http://example.com/path"],
+    ["//cdn.example/image.png", "https://cdn.example/image.png"],
+    ["/a&#40;b&#41;&#91;c&#93; space", "https://site.example/a%28b%29\\[c\\]%20space"],
+    ["/query?q=&quot;quoted&quot;&amp;x=1", "https://site.example/query?q=%22quoted%22&x=1"],
+    ["https://[2001:db8::1]/?a=1&amp;b=2", "https://\\[2001:db8::1\\]/?a=1&b=2"],
+    ["/back\\slash", "https://site.example/back/slash"],
+    ["/?q=back\\slash[bracket]", "https://site.example/?q=back%5Cslash\\[bracket\\]"]
+  ];
+  for (const [destination, expected] of cases) {
+    assert.equal(await convertMd(`<main><a data-href="javascript:bad" title="href='javascript:bad'" href="${destination}">世界 🙂</a><img src="${destination}" alt="图片"></main>`, "https://site.example/dir/page"),
+      `[世界 🙂](${expected})![图片](${expected})`, destination);
+  }
+  assert.equal(await convertMd("<main><a HREF=/valid>Unquoted</a><IMG SRC=/pic ALT=Alt></main>", "https://site.example"), "[Unquoted](https://site.example/valid)![Alt](https://site.example/pic)");
+  const markdown = await convertMd('<main><a href="https://[2001:db8::1]/?a=1&amp;b=2">Link</a></main>', "https://site.example");
+  const destination = new URL(markdown.slice("[Link](".length, -1).replace(/\\([[\]])/g, "$1"));
+  assert.equal(destination.hostname, "[2001:db8::1]");
+  assert.deepEqual([...destination.searchParams], [["a", "1"], ["b", "2"]]);
+});
+
+test("Markdown preserves validated linked images without escaping their generated syntax", async () => {
+  assert.equal(await convertMd('<main><a href="/target">Before <img src="/img.png" alt="x](bad)[y"> after</a></main>', "https://site.example"),
+    "[Before ![x\\]\\(bad\\)\\[y](https://site.example/img.png) after](https://site.example/target)");
+  assert.equal(await convertMd('<main><a href="/target"><img src="/img.png" alt="Image"></a></main>', "https://site.example"),
+    "[![Image](https://site.example/img.png)](https://site.example/target)");
+  assert.equal(await convertMd('<main><a href="javascript:bad"><img src="data:bad" alt="x](bad)[y"></a></main>', "https://site.example"), "x\\]\\(bad\\)\\[y");
+});
+
+test("Markdown labels and alt text cannot inject link syntax after entity decoding", async () => {
+  const label = "click&#93;&#40;javascript:evil&#41;&#91;x\\ &amp;#93; &lt;tag&gt;";
+  const expected = "click\\]\\(javascript:evil\\)\\[x\\\\ \\&\\#93; &lt;tag&gt;";
+  const actual = await convertMd(`<main><a href="/safe">${label}</a><img src="/safe" alt="${label}"></main>`, "https://site.example");
+  assert.equal(actual, `[${expected}](https://site.example/safe)![${expected}](https://site.example/safe)`);
+  assert.equal(await convertMd('<main><a href="javascript:bad">x](data:bad)[y</a><img src="data:bad" alt="x](data:bad)[y"></main>', "https://site.example"), "x\\]\\(data:bad\\)\\[yx\\]\\(data:bad\\)\\[y");
+  assert.equal(await convertMd('<main><a href="/safe">line&#10;break&#127;end</a></main>', "https://site.example"), "[line break end](https://site.example/safe)");
+});
+
+test("Markdown container cleanup cannot resurrect unsafe destinations", async () => {
+  for (const tag of ["h2", "blockquote", "strong", "em", "li"]) {
+    for (const label of [
+      "<a href='javascript:bad'>run</a>)",
+      "[<a>run</a>](javascript:bad)",
+      "<a href='javascript:bad'>x](javascript:bad)[<a>run</a>)</a>",
+      "<strong><a href='data:bad'>run</a>)</strong>",
+      "&#91;run&#93;&#40;javascript&colon;bad&#41;",
+      "[run](javascript:bad)", "\\[run](vbscript:bad)",
+      "&amp;#91;run&amp;#93;(data:bad)"
+    ]) {
+      const content = `<${tag}>${label}</${tag}>`;
+      const html = `<main>${tag === "li" ? `<ul>${content}</ul>` : content}</main>`;
+      const markdown = await convertMd(html, "https://site.example/page");
+      const rendered = renderMarkdown(markdown);
+      assert.doesNotMatch(rendered, /<(?:a|img)\b/i, `${tag}: ${markdown}`);
+      assert.match(rendered, /run/);
+    }
+  }
+  const title = await convertMd("<title>[run](javascript:bad)</title><main>Text</main>", "https://site.example");
+  assert.doesNotMatch(renderMarkdown(title), /<a\b/i);
+  const formatted = await convertMd('<main><h2><strong>Bold</strong> <a href="/safe">safe</a></h2><blockquote><em>Italic</em></blockquote></main>', "https://site.example");
+  assert.match(renderMarkdown(formatted), /<h2><strong>Bold<\/strong> <a href="https:\/\/site.example\/safe">safe<\/a><\/h2>/);
+  assert.match(renderMarkdown(formatted), /<em>Italic<\/em>/);
+});
+
+test("rendered Markdown preserves validated destination semantics and linked images", async () => {
+  const markdown = await convertMd('<main><a href="https://[2001:db8::1]/?a=1&amp;b=2"><img src="/路径?q=🙂" alt="x](javascript:bad)"></a></main>', "https://site.example");
+  const rendered = renderMarkdown(markdown);
+  assert.match(rendered, /href="https:\/\/\[2001:db8::1\]\/\?a=1&amp;b=2"/);
+  assert.match(rendered, /src="https:\/\/site.example\/%E8%B7%AF%E5%BE%84\?q=%F0%9F%99%82"/);
+  assert.equal((rendered.match(/<a\b/g) || []).length, 1);
+  assert.equal((rendered.match(/<img\b/g) || []).length, 1);
+});
+
 test("Markdown conversion strips tags and escapes remaining angle brackets", async () => {
   const html = "<main><p><span>Nested text</span>: 2 < 3 &amp;&amp; 4 &gt; 1.</p><!-- removed -->unfinished <script</main>";
   assert.equal(
@@ -463,6 +562,21 @@ test("Markdown conversion handles larger HTML documents", async () => {
   assert.equal(await convertMd(html, "https://hussamfaroug.com"), expected);
 });
 
+test("Markdown text slicing preserves long runs, comparisons, and incomplete tags", async () => {
+  const text = "Résumé 世界 🙂 < 3 &amp; ".repeat(1000);
+  const html = `<main><p>${text}<span title="quoted > delimiter">end</span>unfinished <tag</p></main>`;
+  assert.equal(await convertMd(html, "https://site.example"), text.replaceAll("<", "&lt;").replaceAll("&amp;", "&") + "endunfinished &lt;tag");
+});
+
+test("Markdown shared patterns remain deterministic across concurrent conversions", async () => {
+  const documents = Array.from({ length: 24 }, (_, index) => ({
+    html: `<main><h2>Heading ${index}</h2><ul><li>One</li><li>Two</li></ul><p><a href="/${index}">Link</a> <strong>bold</strong></p></main>`,
+    expected: `## Heading ${index}\n\n- One\n- Two\n\n[Link](https://site.example/${index}) **bold**`
+  }));
+  const output = await Promise.all(documents.map(({ html }) => convertMd(html, "https://site.example")));
+  assert.deepEqual(output, documents.map(({ expected }) => expected));
+});
+
 test("Markdown preserves status, restrictive caching, variation, and safe representation headers", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response("<main><p>Missing</p></main>", {
@@ -614,6 +728,52 @@ test("identity cache policy preserves non-HTML streaming and HEAD cancellation",
         await reader.cancel();
       } else assert.equal(response.body, null);
       assert.equal(cancelled, true);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HTML media type classification is exact and case-insensitive for GET and HEAD", async () => {
+  const originalFetch = globalThis.fetch;
+  const html = "<html><head></head><body><p>Content</p></body></html>";
+  try {
+    for (const method of ["GET", "HEAD"]) {
+      for (const accept of ["text/html", "text/markdown"]) {
+        for (const [contentType, isHtml] of [
+          ["text/html", true], ["Text/HTML; charset=UTF-8", true],
+          ["  TEXT/HTML  ; charset=utf-8", true], ["text/html ; profile=\"example\"", true],
+          ["application/text/html", false], ["text/htmlish", false], ["text/html-invalid", false],
+          ["application/json; note=text/html", false], ["text/plain; text/html", false],
+          ["text/html, application/json", false], [null, false]
+        ]) {
+          for (const nullBody of [false, true]) {
+            globalThis.fetch = async () => {
+              const headers = { Vary: "Origin" };
+              if (contentType !== null) headers["Content-Type"] = contentType;
+              // A byte body avoids Response adding an implicit text/plain Content-Type.
+              return new Response(nullBody ? null : new TextEncoder().encode(html), {
+                status: nullBody ? 204 : 202, headers
+              });
+            };
+            const response = await worker.fetch(new Request("https://hussamfaroug.com/page", {
+              method, headers: { Accept: accept }
+            }), testEnv);
+            const transformed = isHtml && !nullBody;
+            assert.equal(response.status, nullBody ? 204 : 202);
+            assert.equal(response.headers.get("Vary"), transformed ? "Origin, Accept" : "Origin");
+            assert.equal(response.headers.has("Link"), transformed && accept === "text/html");
+            assert.equal(response.headers.has("Content-Security-Policy"), transformed && accept === "text/html");
+            assert.equal(response.headers.get("Content-Type"),
+              transformed && accept === "text/markdown" ? "text/markdown; charset=utf-8" : contentType?.trim() ?? null);
+            const body = await response.text();
+            if (method === "HEAD" || nullBody) assert.equal(body, "");
+            else if (!transformed) assert.equal(body, html);
+            else if (accept === "text/markdown") assert.equal(body, "Content");
+            else assert.match(body, /<script nonce=/);
+          }
+        }
+      }
     }
   } finally {
     globalThis.fetch = originalFetch;
