@@ -3,14 +3,14 @@
 ## Executive summary
 
 The measured data does **not** confirm `mdDec()` as the primary bottleneck. On a
-500,000-character complex fixture, it accounted for 4.922 ms (0.31%) of a
-1,595.752 ms conversion; the Markdown generation stage took 1,571.526 ms
-(98.48%). The decoder was called 6,117 times, not the previously asserted
+500,000-character complex fixture, it accounted for 4.237 ms (0.28%) of a
+1,505.964 ms conversion; the Markdown generation stage took 1,482.721 ms
+(98.46%). The decoder was called 6,117 times, not the previously asserted
 48,381 times.
 
 Combining the seven decoder replacements into one callback-based regex was
-slower in this benchmark: 63.067 ms versus 44.657 ms for seven sequential
-passes (0.71x speedup, i.e. the combined version took 1.41x as long). No
+slower in this benchmark: 57.650 ms versus 34.241 ms for seven sequential
+passes (0.59x speedup, i.e. the combined version took 1.68x as long). No
 15-second timeout was reproduced for any tested fixture through 600 KB, so no
 minimal failing input or timeout threshold was found. The earlier timeout
 observations remain unverified by this run.
@@ -49,10 +49,10 @@ to the module and intended for sequential profiling, not concurrent requests.
 
 | Input size | Calls | Total (ms) | Average (ms/call) | Average-time ratio vs previous | Effective exponent |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Small (50 B) | 1,000 | 2.645 | 0.002645 | — | — |
-| Medium (500 B) | 1,000 | 6.527 | 0.006527 | 2.47x | 0.39 |
-| Large (5,000 B) | 1,000 | 50.707 | 0.050707 | 7.77x | 0.89 |
-| Very large (50,000 B) | 1,000 | 328.628 | 0.328628 | 6.48x | 0.81 |
+| Small (50 B) | 1,000 | 2.820 | 0.002820 | — | — |
+| Medium (500 B) | 1,000 | 5.107 | 0.005107 | 1.81x | 0.26 |
+| Large (5,000 B) | 1,000 | 32.511 | 0.032511 | 6.37x | 0.80 |
+| Very large (50,000 B) | 1,000 | 309.580 | 0.309580 | 9.52x | 0.98 |
 
 **Finding:** At larger inputs, scaling is approximately linear, not
 quadratic/exponential. Effective exponents are below 1 for these measurements;
@@ -67,18 +67,18 @@ individual rows.
 
 | Pass | Pattern | 100 iterations (ms) | Share of independent pass sum |
 | --- | --- | ---: | ---: |
-| 1 | `/&lt;/g` | 6.190 | 11.3% |
-| 2 | `/&gt;/g` | 6.481 | 11.9% |
-| 3 | `/&quot;/g` | 5.810 | 10.6% |
-| 4 | `/&#39;/g` | 4.414 | 8.1% |
-| 5 | `/&nbsp;/g` | 4.343 | 8.0% |
-| 6 | `/&#(\d+);/g` | 22.467 | 41.2% |
-| 7 | `/&amp;/g` | 4.858 | 8.9% |
-| Independent pass sum | — | 54.562 | 100% |
-| Seven sequential passes | — | 44.657 | — |
-| Combined callback regex | — | 63.067 | — |
+| 1 | `/&lt;/g` | 4.741 | 10.7% |
+| 2 | `/&gt;/g` | 4.110 | 9.3% |
+| 3 | `/&quot;/g` | 4.119 | 9.3% |
+| 4 | `/&#39;/g` | 4.036 | 9.1% |
+| 5 | `/&nbsp;/g` | 4.059 | 9.2% |
+| 6 | `/&#(\d+);/g` | 19.199 | 43.4% |
+| 7 | `/&amp;/g` | 3.930 | 8.9% |
+| Independent pass sum | — | 44.193 | 100% |
+| Seven sequential passes | — | 34.241 | — |
+| Combined callback regex | — | 57.650 | — |
 
-**Measured speedup (seven passes / combined): 0.71x.** The combined regex
+**Measured speedup (seven passes / combined): 0.59x.** The combined regex
 produced the same output for the benchmark input, but was slower. These data
 disprove the assumption that combining the passes is automatically a
 performance win; no production decoder change is recommended from this result.
@@ -91,11 +91,11 @@ The five fixture families were tested at 25, 50, 100, 200, 300, 400, 500 and
 
 | Fixture | 25 KB | 50 KB | 100 KB | 200 KB | 300 KB | 400 KB | 500 KB | 600 KB | First timeout |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 128 nested div/blockquote levels with repeated formatted/code content | 7.928 | 13.436 | 25.273 | 48.805 | 249.326 | 835.882 | 1,621.548 | 2,468.395 | Not observed |
-| Repeated unclosed `<h2>` headings | 5.771 | 17.906 | 57.564 | 204.995 | 461.309 | 808.109 | 1,253.119 | 1,782.385 | Not observed |
-| Repeated special links (`?q=a&amp;b=c`) | 20.143 | 35.398 | 212.399 | 687.579 | 1,450.833 | 2,247.090 | 3,738.979 | 5,205.336 | Not observed |
-| Repeated unclosed `<strong>` formatting | 4.115 | 11.798 | 38.303 | 139.924 | 299.347 | 518.760 | 789.145 | 1,134.682 | Not observed |
-| Unterminated title followed by body content | 0.747 | 0.836 | 0.979 | 1.264 | 1.597 | 1.973 | 2.281 | 2.512 | Not observed |
+| 128 nested div/blockquote levels with repeated formatted/code content | 7.264 | 12.451 | 27.635 | 48.480 | 236.404 | 815.123 | 1,497.217 | 2,370.412 | Not observed |
+| Repeated unclosed `<h2>` headings | 5.254 | 17.380 | 56.246 | 191.054 | 449.557 | 688.381 | 1,254.283 | 1,687.752 | Not observed |
+| Repeated special links (`?q=a&amp;b=c`) | 19.148 | 35.426 | 210.475 | 631.703 | 1,419.921 | 2,516.936 | 3,610.628 | 4,971.989 | Not observed |
+| Repeated unclosed `<strong>` formatting | 4.304 | 13.044 | 39.995 | 136.075 | 297.007 | 510.305 | 776.034 | 1,113.182 | Not observed |
+| Unterminated title followed by body content | 0.683 | 0.785 | 0.886 | 1.236 | 1.601 | 1.917 | 2.172 | 2.505 | Not observed |
 
 No fixture timed out, including the 25 KB and 50 KB probes; consequently, the
 binary search had no success/timeout boundary to refine. The smallest failing
@@ -128,15 +128,15 @@ with strong, emphasis and code elements. Stage timings and decoder instrumentati
 were collected in one warmed run.
 
 ```text
-Conversion duration:             1,595.752 ms
-HTMLRewriter stage:                 23.910 ms
-Markdown generation stage:       1,571.526 ms
+Conversion duration:             1,505.964 ms
+HTMLRewriter stage:                 22.942 ms
+Markdown generation stage:       1,482.721 ms
 
 mdDec() calls:                       6,117
-Total time in mdDec():                4.922 ms
-Average per call:                    0.000805 ms
-Maximum single call:                 0.593 ms
-mdDec() share of conversion:          0.31%
+Total time in mdDec():                4.237 ms
+Average per call:                    0.000693 ms
+Maximum single call:                 0.032 ms
+mdDec() share of conversion:          0.28%
 
 Call sizes:
   <100 characters:                   6,117
@@ -157,9 +157,9 @@ Evidence:
 
 1. `mdDec()` was called 6,117 times in this fixture, rather than the previously
    suggested 48,381 times.
-2. The decoder consumed 4.922 ms (0.31% of measured conversion time).
-3. Markdown generation consumed 1,571.526 ms (98.48%); HTML rewriting consumed
-   23.910 ms.
+2. The decoder consumed 4.237 ms (0.28% of measured conversion time).
+3. Markdown generation consumed 1,482.721 ms (98.46%); HTML rewriting consumed
+   22.942 ms.
 4. Isolated decoder scaling was approximately linear over the larger test
    sizes.
 5. A combined entity regex was slower than the seven existing passes in the
@@ -174,7 +174,7 @@ not isolated by these measurements. This phase therefore falsifies the specific
 ## 6. Data-driven next steps
 
 - **Do not combine entity passes based on this benchmark.** The tested combined
-  callback regex was 1.41x slower.
+  callback regex was 1.68x slower.
 - **Do not add a decode cache based on these measurements.** Decoder time is
   only 0.31% of this conversion, and cache hit rate/memory impact were not
   measured.
