@@ -1,5 +1,6 @@
 export const MAX_HTML_BYTES = 1024 * 1024;
 export const ORIGIN_TIMEOUT_MS = 10000;
+export const ORIGIN_RETRY_BASE_DELAY_MS = 100;
 
 export function prefersMarkdown(accept) {
   const ranges = accept.toLowerCase().split(",").map(part => {
@@ -60,6 +61,36 @@ export async function fetchOrigin(url, headers, requestSignal) {
   } catch (error) {
     cleanup();
     throw error;
+  }
+}
+
+function waitForRetry(delayMs, requestSignal) {
+  return new Promise(resolve => {
+    const done = () => {
+      clearTimeout(timer);
+      requestSignal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, delayMs);
+    requestSignal.addEventListener("abort", done, { once: true });
+  });
+}
+
+// Retries transient origin fetch failures (network errors and timeouts, not HTTP
+// error statuses) with exponential backoff: 100ms, 200ms, ... Client cancellation
+// stops further attempts. Errors are rethrown unchanged and never logged here, so
+// origin details and request URLs do not reach the logs.
+export async function fetchOriginWithRetry(url, headers, requestSignal, maxRetries = 1) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetchOrigin(url, headers, requestSignal);
+    } catch (error) {
+      if (attempt >= maxRetries || requestSignal.aborted) throw error;
+      const delayMs = Math.pow(2, attempt) * ORIGIN_RETRY_BASE_DELAY_MS;
+      console.log("origin fetch retry " + (attempt + 1) + "/" + maxRetries + " after " + delayMs + "ms");
+      await waitForRetry(delayMs, requestSignal);
+      if (requestSignal.aborted) throw error;
+    }
   }
 }
 
