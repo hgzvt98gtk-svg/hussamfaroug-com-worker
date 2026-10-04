@@ -51,6 +51,12 @@ differ, and rare paths/short windows may have no samples. The `_ms` fields are
 **sums**, never individual durations or percentiles. Do not graph them directly
 as response latency or sum their averages into an end-to-end p99.
 
+Workers' `performance.now()` can be coarse and advance with I/O rather than
+continuously during synchronous execution. Measured synchronous stages can
+therefore report 0 ms despite doing work; this is not proof of zero CPU cost.
+Local Node benchmark timings have different clock behavior and must not be
+interpreted as equivalent edge measurements.
+
 ### Reset-safe ingestion and interval calculations
 
 1. Parse only validated `type: "metrics"` records and retain numeric fields,
@@ -106,6 +112,35 @@ incomplete. None of these aggregates supports percentile reconstruction.
 
 ### Optional external integrations
 
+#### Option A: Cloudflare Logpush
+
+Subject to the account's plan and dataset availability, configure Logpush to an
+authorized destination for the required Worker logs and/or edge HTTP request
+datasets. These can be separate datasets: verify that the selected exports
+actually provide console metrics, final status, cache status, and the chosen
+request-duration fields before using them. Set filters, retention, access
+controls, and delivery monitoring; validate records against known requests.
+No Logpush job or destination is provisioned by this repository.
+
+#### Option B: Manual webhook integration (future work)
+
+A custom webhook exporter would require new code or an operator-managed service,
+secret-backed authentication, bounded batching, retry/backoff, deduplication,
+and delivery-failure monitoring. None is present. Sending the existing
+request-triggered metrics would not guarantee delivery every five minutes when
+idle. A scheduled trigger and persistent aggregation would require separate
+implementation; isolate-local counters cannot simply be read by another
+scheduled invocation. Do not enable alerts that assume this delivery exists.
+
+#### Option C: Cloudflare Analytics Engine (future work)
+
+Analytics Engine requires a separately provisioned dataset/binding, write
+instrumentation, and query configuration; none is configured. Validate sampling
+and data definitions before creating dashboards or alerts. Application component
+sums still cannot supply request percentiles.
+
+#### Visualization and notifications
+
 - **Prometheus/Grafana:** configure an operator-managed collector to receive
   supported Cloudflare exports, validate records, handle stream resets, and
   expose safe interval aggregates/histograms. Prometheus cannot scrape a
@@ -114,8 +149,6 @@ incomplete. None of these aggregates supports percentile reconstruction.
 - **Datadog or another hosted backend:** configure a supported Cloudflare log
   integration/export and map verified status/duration fields. Build percentiles
   from individual durations or compatible histograms, not component sums.
-- **Cloudflare Analytics Engine:** optional future instrumentation requiring a
-  separately provisioned dataset/binding and code changes; none is configured.
 - **Notifications:** explicitly configure and test the chosen email/pager/chat
   destination and escalation policy. Keep webhook URLs/tokens in the backend's
   secret store; no webhook URL or notification service is supplied here.
@@ -139,12 +172,12 @@ traffic. If volume or coverage is insufficient, mark the rule **insufficient
 data**, not healthy; use separately configured low-rate availability probes
 and investigation instead. Platform sampling may require stricter guards.
 
-| Alert | Window / condition | Authoritative provenance and denominator |
-| --- | --- | --- |
-| Elevated 5xx | 5 minutes, `100 × count(status 500–599) / count(all completed requests) > 1` | Final edge HTTP status logs. Never `errors_total / requests_total`. |
-| Elevated rate limiting | 5 minutes, `100 × count(status 429) / count(all completed requests) > 5` | Final edge HTTP status logs; use limiter deltas only as a diagnostic cross-check. |
-| High request latency | 5 minutes, actual request-duration p99 >500 ms | Verified per-request wall-clock durations or mergeable latency histograms; use backend quantile calculation. Never lifetime means/maxima, CPU time, or cumulative component sums. |
-| Origin-related 502 outage | 2 minutes, `100 × count(confirmed origin-related final 502) / count(all completed requests) > 50` | Final edge 502 logs correlated with request-specific origin/network failure evidence or platform origin tracing. Denominator is all completed requests, **not** only 502 responses. |
+| Alert | Window / condition | Authoritative provenance and denominator | Action after commissioning |
+| --- | --- | --- | --- |
+| Elevated 5xx | 5 minutes, `100 × count(status 500–599) / count(all completed requests) > 1` | Final edge HTTP status logs. Never `errors_total / requests_total`. | Page the configured incident responder; triage origin/configuration and recent deployments. |
+| Elevated rate limiting | 5 minutes, `100 × count(status 429) / count(all completed requests) > 5` | Final edge HTTP status logs; use limiter deltas only as a diagnostic cross-check. | Notify the service owner; investigate bursts, shared client IPs, and client backoff. |
+| High request latency | 5 minutes, actual request-duration p99 >500 ms | Verified per-request wall-clock durations or mergeable latency histograms; use backend quantile calculation. Never lifetime means/maxima, CPU time, or cumulative component sums. | Track as a non-paging performance alert; compare regions, origin health, and release baselines. |
+| Origin-related 502 outage | 2 minutes, `100 × count(confirmed origin-related final 502) / count(all completed requests) > 50` | Final edge 502 logs correlated with request-specific origin/network failure evidence or platform origin tracing. Denominator is all completed requests, **not** only 502 responses. | Page the configured incident responder; check origin/network and coordinate recovery. |
 
 The last alert requires attribution that separates upstream 502 and failed
 origin fetches from converter/read-limit 502s. Generic error console messages
@@ -162,9 +195,20 @@ Do not apply those targets to component timing means.
 
 ## Dashboard and commissioning checklist
 
+Set dashboard refresh to **one minute**, but show the last complete ingestion
+watermark and sampling coverage. Refresh does not produce new measurements:
+export delays and request-triggered snapshots can leave panels unchanged for
+more than five minutes.
+
 - Request volume and final-status distribution: 2xx, 3xx, 4xx, 429, 5xx, and 502.
-- Actual latency p50/p95/p99 by safe path class, version, and representation;
+- Actual latency p50/p90/p95/p99 by safe path class, version, and representation;
   show units, sample count, latency definition, and coverage.
+- Edge cache-hit ratio: `100 × count(cache status HIT) / count(requests with
+  known edge cache status)` over the same complete window. Document the
+  dataset's status mapping; show MISS, BYPASS, DYNAMIC, revalidation, and unknown
+  statuses separately. This measures the selected edge cache layer, not origin
+  subrequest caching or a nonexistent Worker cache counter. If unavailable,
+  display unavailable rather than assuming zero hits.
 - Reset-safe limiter, origin, retry, and conversion error deltas; separate
   terminal fetch failures from upstream HTTP failures.
 - Component interval means with sample counts; all-conversion lifetime

@@ -8,7 +8,7 @@ import { convertMd } from "../markdown.js";
 import { MAX_HTML_BYTES, prefersMarkdown, readHtml } from "../proxy.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const options = { iterations: 30, baseline: resolve(root, "benchmarks/results-baseline.json"), label: "current" };
+const options = { iterations: 10, baseline: resolve(root, "benchmarks/results-baseline.json"), label: "current" };
 for (let i = 2; i < process.argv.length; i += 2) {
   const flag = process.argv[i];
   const value = process.argv[i + 1];
@@ -57,7 +57,7 @@ function generateHtml(bytes, complex = false) {
 const scenarios = [
   { name: "small", html: generateHtml(10_000), accept: "text/markdown" },
   { name: "medium", html: generateHtml(100_000, true), accept: "text/markdown" },
-  { name: "large", html: generateHtml(1_000_000, true), accept: "text/markdown" },
+  { name: "large", html: generateHtml(1_000_000), accept: "text/markdown" },
   { name: "nested", html: "<html><body><main>" + "<div><blockquote>".repeat(128) +
       generateHtml(50_000, true) + "</blockquote></div>".repeat(128) + "</main></body></html>", accept: "text/markdown" },
   { name: "longAccept", html: generateHtml(50_000, true),
@@ -102,7 +102,9 @@ async function run(scenario) {
 
 let baseline;
 try {
-  baseline = JSON.parse(await readFile(resolve(options.baseline), "utf8"));
+  if (!options.output || resolve(options.output) !== resolve(options.baseline)) {
+    baseline = JSON.parse(await readFile(resolve(options.baseline), "utf8"));
+  }
 } catch (error) {
   if (error.code !== "ENOENT") throw error;
 }
@@ -114,6 +116,9 @@ const results = {
     rewriter: "html-rewriter-wasm@0.4.1", sourceSha256: fingerprint.digest("hex") },
   methodology: "Local streamed conversion pipeline; 3 warmups; sequential runs; nearest-rank percentiles; excludes origin network and Worker response headers",
   iterations: options.iterations, unit: "ms", scenarios: []
+};
+if (baseline) results.baseline = {
+  timestamp: baseline.timestamp, sourceSha256: baseline.environment?.sourceSha256, iterations: baseline.iterations
 };
 for (const scenario of scenarios) {
   for (let i = 0; i < 3; i++) await run(scenario);

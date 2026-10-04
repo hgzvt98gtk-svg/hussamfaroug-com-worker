@@ -13,6 +13,7 @@ var mdPatterns = {
   format: new RegExp("<(strong|b|em|i)\\b" + tagAttrs + ">([\\s\\S]*?)<\\/\\1\\s*>|<hr\\b" + tagAttrs + "\\s*\\/?>|<p\\b" + tagAttrs + ">|<\\/p\\s*>|<br\\b" + tagAttrs + "\\s*\\/?>", "gi")
 };
 var attributeEntities = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", colon: ":", Tab: "\t", NewLine: "\n" };
+var unsafeDestination = /[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i;
 
 function mdDec(value) {
   return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, function(match, decimal) {
@@ -89,7 +90,6 @@ function mdLabel(value, trim = true) {
 function mdRu(href, base) {
   if (href === null || href.trim() === "") return null;
   href = mdAttribute(href);
-  var unsafeDestination = /[\u0000-\u001f\u007f-\u009f\ufffd]|&(?:#[^\s&]*|[a-z][a-z0-9]*;)/i;
   if (unsafeDestination.test(href)) return null;
   try {
     var destination = new URL(href, base);

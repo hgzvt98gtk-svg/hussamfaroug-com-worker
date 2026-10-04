@@ -87,6 +87,9 @@ converter work; headers/token means help localize processing overhead. These
 components do not describe complete streamed-response latency and cannot yield
 p99. `conversion_avg_ms` averages all recorded conversions, including failed
 conversion attempts whose timing is recorded; it is not a sampled percentile.
+Workers' `performance.now()` can be coarse/I/O-dependent, so synchronous stages
+may measure 0 ms despite real work. Local Node timings have different clock
+behavior; do not mistake zero edge measurements for zero processing cost.
 
 For a reproducible local converter comparison:
 

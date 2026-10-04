@@ -98,6 +98,8 @@ HTML responses receive a Content-Security-Policy. When the origin sends one,
 the Worker nonce and Turnstile sources are added to `script-src-elem`, else
 `script-src`, else a new `script-src` inheriting `default-src`; existing
 sources are never removed. Missing or empty origin policies get a strict default.
+Multiple origin policies remain comma-separated and independently enforced;
+each policy's effective script directive receives the same Worker nonce.
 
 Origin requests are unconditional (no Range or conditional validator headers),
 request HTML when available, and have a 10-second timeout covering headers and
@@ -203,6 +205,34 @@ requests or five minutes, whichever comes first, when a request arrives. There
 is no background timer or public metrics endpoint, so quiet isolates do not
 emit time-based logs while idle. Logs contain aggregate counters only, not URLs,
 client addresses, or origin error details.
+
+Component timing uses random 1% request sampling. Metrics expose cumulative
+`timingOrigin_ms`, `timingReadHtml_ms`, `timingConversion_ms`, `timingHeaders_ms`,
+and `timingToken_ms` sums with matching `_samples` counts. Divide interval deltas
+by sample-count deltas within the same isolate to obtain sampled means; these
+are not request percentiles. Origin timing covers fetch/retry through headers,
+not complete streaming. The runtime clock may have coarse or I/O-dependent
+resolution, so short synchronous stages can measure zero.
+
+See [OPERATIONS_RUNBOOK.md](OPERATIONS_RUNBOOK.md) for incident/deployment
+procedures and [MONITORING_SETUP.md](MONITORING_SETUP.md) for telemetry sources,
+reset-safe calculations, and alert setup. These guides do not provision alerts.
+
+### Local Markdown benchmarks
+
+```sh
+node scripts/benchmark-markdown.mjs
+# More iterations or an alternate baseline:
+node scripts/benchmark-markdown.mjs --iterations 50 --baseline benchmarks/results-baseline.json
+```
+
+The script runs five scenarios with at least ten iterations and three warmups,
+reports read, rewriter, Markdown generation, token estimation, negotiation, and
+total pipeline timings, and writes timestamped JSON under `benchmarks/`.
+It compares compatible scenario means and p99 against the checked-in baseline.
+Results use the existing Node/WASM test parser, not Cloudflare's native runtime,
+and exclude origin network and response-header processing. See
+[BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for measurements and limitations.
 
 Run the non-destructive deployment smoke checks after deployment:
 
