@@ -4,6 +4,7 @@ import worker from "../hussamfaroug-com-worker.js";
 import { fetchOriginWithRetry, ORIGIN_RETRY_BASE_DELAY_MS } from "../proxy.js";
 import { checkRateLimit, RATE_LIMIT_MAX_CLIENTS, RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW_MS, resetRateLimits } from "../rate-limit.js";
 import { getDirectiveIndex, getDirectiveSources, mergeWorkerScriptSources, parseCSPDirectives, secHdrs, setDirectiveSources } from "../response.js";
+import { getMetrics } from "../metrics.js";
 
 const env = { ORIGIN: "https://origin.example" };
 
@@ -38,6 +39,7 @@ test("rate limiter memory stays bounded under many distinct clients", () => {
 });
 
 test("101st request from one IP returns 429 with Retry-After; other IPs pass", async (t) => {
+  const metricsBefore = getMetrics();
   withFetch(t, async () => new Response("ok", { headers: { "Content-Type": "text/plain" } }));
   const send = ip => worker.fetch(new Request("https://hussamfaroug.com/robots.txt", { headers: ip ? { "cf-connecting-ip": ip } : {} }), env);
   for (let i = 0; i < RATE_LIMIT_REQUESTS; i++) assert.equal((await send("203.0.113.9")).status, 200);
@@ -56,9 +58,11 @@ test("101st request from one IP returns 429 with Retry-After; other IPs pass", a
     headers: { "cf-connecting-ip": "203.0.113.9", "x-forwarded-for": "198.51.100.1", "x-real-ip": "198.51.100.2" }
   }), env);
   assert.equal(spoofed.status, 429);
+  assert.equal(getMetrics().requests_rate_limited - metricsBefore.requests_rate_limited, 3);
 });
 
 test("origin retry succeeds after one transient failure with 100ms backoff", async (t) => {
+  const metricsBefore = getMetrics();
   let calls = 0;
   withFetch(t, async () => {
     if (++calls === 1) throw new TypeError("Failed to fetch");
@@ -72,9 +76,11 @@ test("origin retry succeeds after one transient failure with 100ms backoff", asy
   assert.ok(elapsed >= ORIGIN_RETRY_BASE_DELAY_MS - 5, "waited for backoff");
   assert.ok(elapsed < 1000, "added latency is bounded");
   assert.deepEqual(console.log.mock.calls.map(call => call.arguments[0]), ["origin fetch retry 1/1 after 100ms"]);
+  assert.equal(getMetrics().retries_successful - metricsBefore.retries_successful, 1);
 });
 
 test("origin retry rethrows the last error after retries are exhausted", async (t) => {
+  const metricsBefore = getMetrics();
   let calls = 0;
   withFetch(t, async () => { throw new TypeError("failure " + ++calls); });
   await assert.rejects(fetchOriginWithRetry(env.ORIGIN, new Headers(), new AbortController().signal, 2), /failure 3/);
@@ -83,6 +89,7 @@ test("origin retry rethrows the last error after retries are exhausted", async (
     "origin fetch retry 1/2 after 100ms",
     "origin fetch retry 2/2 after 200ms"
   ]);
+  assert.equal(getMetrics().errors_retry - metricsBefore.errors_retry, 1);
 });
 
 test("origin retry stops when the client cancels", async (t) => {

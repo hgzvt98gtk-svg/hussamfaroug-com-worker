@@ -4,6 +4,7 @@ import { convertMd } from "./markdown.js";
 import { b64u, discoveryHtml, linkHdr, secHdrs, varyAccept, webmcp } from "./response.js";
 import { fetchOriginWithRetry, prefersMarkdown, readHtml } from "./proxy.js";
 import { checkRateLimit } from "./rate-limit.js";
+import { recordConversionTime, recordError, recordRequest } from "./metrics.js";
 
 var encoder = new TextEncoder();
 
@@ -32,6 +33,9 @@ var worker_default = {
 };
 
 async function handleRequest(request, env, headOnly = false) {
+  recordRequest(request.method === "GET" || request.method === "HEAD"
+    ? (prefersMarkdown(request.headers.get("Accept") || "") ? "markdown" : "html")
+    : "other");
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: {
       "Access-Control-Allow-Origin": "*",
@@ -47,6 +51,7 @@ async function handleRequest(request, env, headOnly = false) {
   }
   var clientId = request.headers.get("cf-connecting-ip") || "unknown";
   if (!checkRateLimit(clientId)) {
+    recordError("rateLimit");
     return new Response("Rate limit exceeded", { status: 429, headers: {
       "Content-Type": "text/plain",
       "Retry-After": "60",
@@ -67,7 +72,10 @@ async function handleRequest(request, env, headOnly = false) {
     });
   }
   var proxyOrigin = env.ORIGIN;
-  if (!proxyOrigin) return new Response("Origin configuration unavailable", { status: 500, headers: { "Cache-Control": "no-store" } });
+  if (!proxyOrigin) {
+    recordError("configuration");
+    return new Response("Origin configuration unavailable", { status: 500, headers: { "Cache-Control": "no-store" } });
+  }
   var proxyUrl;
   try {
     proxyUrl = new URL(proxyOrigin);
@@ -78,6 +86,7 @@ async function handleRequest(request, env, headOnly = false) {
     proxyUrl.hash = "";
     if (proxyUrl.origin !== trustedOrigin) throw new Error("Invalid destination");
   } catch {
+    recordError("configuration");
     return new Response("Origin configuration unavailable", { status: 500, headers: { "Cache-Control": "no-store" } });
   }
   var forwardedHeaders = new Headers(request.headers);
@@ -102,6 +111,7 @@ async function handleRequest(request, env, headOnly = false) {
       "Access-Control-Allow-Origin": "*"
     } });
   }
+  if (upstream.status >= 500) recordError("origin");
   var mediaType = (upstream.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
   if (mediaType !== "text/html" || upstream.body === null) {
     var passthroughHeaders = new Headers(upstream.headers);
@@ -115,8 +125,14 @@ async function handleRequest(request, env, headOnly = false) {
     } else {
       try {
         var html = await readHtml(upstream);
-        markdown = await convertMd(html, proxyUrl.href);
+        var conversionStartedAt = Date.now();
+        try {
+          markdown = await convertMd(html, proxyUrl.href);
+        } finally {
+          recordConversionTime(Date.now() - conversionStartedAt);
+        }
       } catch {
+        recordError("conversion");
         console.error("origin conversion failed");
         return new Response("Origin conversion unavailable", { status: 502, headers: { "Cache-Control": "no-store" } });
       }

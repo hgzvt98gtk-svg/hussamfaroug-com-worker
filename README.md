@@ -38,6 +38,8 @@ You can also trigger a deploy manually from the **Actions** tab → **Run workfl
 - `discovery.js` — shared public resource links and browser-tool definition
 - `proxy.js` — Accept negotiation, bounded HTML reads, and origin request lifecycle (including retry)
 - `rate-limit.js` — per-client request rate limiting
+- `metrics.js` — per-isolate request, error, retry, and conversion metrics
+- `scripts/verify-deployment.mjs` — post-deployment endpoint smoke checks
 
 ## Tests
 
@@ -151,6 +153,45 @@ before agents can obtain or validate tokens. The `agent_auth` registration URI
 points to instructions, not a registration API; its empty supported identity and
 credential lists indicate no automated issuance. Public content still needs no
 credentials. A2A, HTTP MCP, and legacy credential service paths remain 404.
+
+## Observability and deployment verification
+
+The Worker emits structured JSON metrics to `console.log` (visible in Cloudflare
+Workers Logs when observability logging is enabled). Each isolate tracks total
+requests, HTML/Markdown requests, rate-limit rejections, upstream 5xx and origin
+configuration errors, conversion and retry errors, successful retries, and
+conversion count/minimum/average/maximum duration. Conversion averages cover
+conversions only, not all requests.
+
+Counters are in-memory and per isolate: they reset when an isolate restarts and
+are not globally aggregated. A metrics record is logged after each 1,000
+requests or five minutes, whichever comes first, when a request arrives. There
+is no background timer or public metrics endpoint, so quiet isolates do not
+emit time-based logs while idle. Logs contain aggregate counters only, not URLs,
+client addresses, or origin error details.
+
+Run the non-destructive deployment smoke checks after deployment:
+
+```sh
+node scripts/verify-deployment.mjs
+# Or provide a deployment origin:
+node scripts/verify-deployment.mjs https://hussamfaroug.com
+```
+
+The script checks the OAuth discovery document, MCP server card, `/auth.md`,
+and a healthy root request; it prints JSON and exits nonzero if checks fail.
+The root check confirms the Worker responds through its retry and rate-limit
+middleware, but does not force a transient origin failure or send a burst of
+requests to trigger the rate limit. It cannot observe metrics logging from the
+public response; confirm metrics records in Workers Logs separately.
+
+No production conversion-latency baseline has been measured. Use the logged
+per-isolate conversion duration aggregates to establish a representative
+baseline under normal traffic before setting latency targets. The local
+Markdown benchmark above measures parser work on Node, not deployed Worker CPU
+or end-to-end production latency. Monitor error/retry/rate-limit counts
+alongside request volume, compare across deployments, and alert on sustained
+changes rather than isolated per-isolate samples.
 
 ## Signing key provisioning and rotation
 

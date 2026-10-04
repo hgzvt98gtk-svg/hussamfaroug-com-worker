@@ -1,3 +1,5 @@
+import { recordError, recordRetrySuccess } from "./metrics.js";
+
 export const MAX_HTML_BYTES = 1024 * 1024;
 export const ORIGIN_TIMEOUT_MS = 10000;
 export const ORIGIN_RETRY_BASE_DELAY_MS = 100;
@@ -83,9 +85,15 @@ function waitForRetry(delayMs, requestSignal) {
 export async function fetchOriginWithRetry(url, headers, requestSignal, maxRetries = 1) {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await fetchOrigin(url, headers, requestSignal);
+      const response = await fetchOrigin(url, headers, requestSignal);
+      if (attempt > 0) recordRetrySuccess();
+      return response;
     } catch (error) {
-      if (attempt >= maxRetries || requestSignal.aborted) throw error;
+      if (attempt >= maxRetries) {
+        recordError("retry");
+        throw error;
+      }
+      if (requestSignal.aborted) throw error;
       const delayMs = Math.pow(2, attempt) * ORIGIN_RETRY_BASE_DELAY_MS;
       console.log("origin fetch retry " + (attempt + 1) + "/" + maxRetries + " after " + delayMs + "ms");
       await waitForRetry(delayMs, requestSignal);

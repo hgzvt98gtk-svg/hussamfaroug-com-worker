@@ -6,6 +6,7 @@ import { botAuth } from "../bot-auth.js";
 import { convertMd } from "../markdown.js";
 import { MAX_HTML_BYTES } from "../proxy.js";
 import { resetRateLimits } from "../rate-limit.js";
+import { getMetrics } from "../metrics.js";
 import MarkdownIt from "markdown-it";
 
 const markdownParser = new MarkdownIt({ html: true });
@@ -67,6 +68,41 @@ test("metadata responses preserve content types and cache policies", async () =>
   const apiCatalog = await worker.fetch(new Request("https://hussamfaroug.com/.well-known/api-catalog"), testEnv);
   assert.equal(apiCatalog.headers.get("Content-Type"), "application/linkset+json");
   assert.equal(apiCatalog.headers.get("Cache-Control"), "public, max-age=3600");
+});
+
+test("Worker records Markdown requests and conversion duration", async () => {
+  const before = getMetrics();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("<html><body><main><p>Observed</p></main></body></html>", {
+    headers: { "Content-Type": "text/html" }
+  });
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/observed", {
+      headers: { Accept: "text/markdown" }
+    }), testEnv);
+    assert.equal(await response.text(), "Observed");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  const after = getMetrics();
+  assert.equal(after.requests_markdown - before.requests_markdown, 1);
+  assert.equal(after.conversions_total - before.conversions_total, 1);
+});
+
+test("Worker records upstream server errors", async () => {
+  const before = getMetrics();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("Unavailable", {
+    status: 503,
+    headers: { "Content-Type": "text/plain" }
+  });
+  try {
+    const response = await worker.fetch(new Request("https://hussamfaroug.com/unavailable"), testEnv);
+    assert.equal(response.status, 503);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(getMetrics().errors_total - before.errors_total, 1);
 });
 
 test("bot-auth signature uses a structured-field byte sequence", async () => {
