@@ -74,12 +74,16 @@ async function runChild(name, size, collectStats = false) {
     await convertMd(fixture(childName, Math.min(childSize, 25_000)), "https://example.com");
     if (childStats) resetMdDecStats();
     const startedAt = performance.now();
-    const markdown = await convertMd(html, "https://example.com");
+    const stages = {};
+    const markdown = await convertMd(html, "https://example.com", (stage, elapsedMs) => {
+      stages[stage] = elapsedMs;
+    });
     const elapsedMs = performance.now() - startedAt;
     process.stdout.write(JSON.stringify({
       inputChars: html.length,
       elapsedMs,
       outputChars: markdown.length,
+      stages: childStats ? stages : undefined,
       mdDec: childStats ? getMdDecStats() : undefined
     }));
     return;
@@ -116,49 +120,56 @@ async function findExactThreshold(name, observations) {
   return { lastPassingBytes: low, firstTimeoutBytes: high };
 }
 
+function printComplexProfile(profile) {
+  console.log("\n500 KB complex mdDec profile:");
+  if (profile.status !== "OK") {
+    console.log(JSON.stringify(profile));
+    return;
+  }
+  const stats = profile.mdDec;
+  const distribution = {
+    small: stats.callsBySize.filter(call => call.size < 100).length,
+    medium: stats.callsBySize.filter(call => call.size >= 100 && call.size <= 1000).length,
+    large: stats.callsBySize.filter(call => call.size > 1000).length
+  };
+  console.log(JSON.stringify({
+    conversionMs: profile.elapsedMs,
+    stages: profile.stages,
+    callCount: stats.callCount,
+    totalMdDecMs: stats.totalTime,
+    averageMs: stats.callCount ? stats.totalTime / stats.callCount : 0,
+    maxMs: stats.maxTime,
+    percentOfConversion: profile.elapsedMs ? stats.totalTime / profile.elapsedMs * 100 : 0,
+    distribution
+  }, null, 2));
+}
+
 if (process.argv[2] === "--child") {
   await runChild();
 } else {
-  console.log(`Minimal-reproducer search (${process.version}; timeout=${timeoutMs}ms per isolated run)`);
-  const results = [];
-  for (const name of names) {
-    const observations = [];
-    for (const size of knownSizes) {
-      const result = await runChild(name, size);
-      observations.push(result);
-      results.push({ fixture: name, bytes: size, status: result.status, elapsedMs: result.elapsedMs });
-      if (result.status === "ERROR") console.error(`  ${name} ${size}: ${result.error}`);
-    }
-    const threshold = await findExactThreshold(name, observations);
-    console.log(`\n${name}: ${threshold ? JSON.stringify(threshold) : "no timeout observed in tested sizes"}`);
-  }
-  console.table(results.map(result => ({
-    fixture: result.fixture,
-    bytes: result.bytes,
-    status: result.status,
-    "conversion ms": result.elapsedMs?.toFixed(3) ?? (result.status === "TIMEOUT" ? `>${timeoutMs}` : "—")
-  })));
-
-  const profileSize = 500_000;
-  const profile = await runChild("complex", profileSize, true);
-  console.log(`\n500 KB complex mdDec profile:`);
-  if (profile.status !== "OK") {
-    console.log(JSON.stringify(profile));
+  if (process.argv[2] === "--profile-only") {
+    printComplexProfile(await runChild("complex", 500_000, true));
   } else {
-    const stats = profile.mdDec;
-    const distribution = {
-      small: stats.callsBySize.filter(call => call.size < 100).length,
-      medium: stats.callsBySize.filter(call => call.size >= 100 && call.size <= 1000).length,
-      large: stats.callsBySize.filter(call => call.size > 1000).length
-    };
-    console.log(JSON.stringify({
-      conversionMs: profile.elapsedMs,
-      callCount: stats.callCount,
-      totalMdDecMs: stats.totalTime,
-      averageMs: stats.callCount ? stats.totalTime / stats.callCount : 0,
-      maxMs: stats.maxTime,
-      percentOfConversion: profile.elapsedMs ? stats.totalTime / profile.elapsedMs * 100 : 0,
-      distribution
-    }, null, 2));
+    console.log(`Minimal-reproducer search (${process.version}; timeout=${timeoutMs}ms per isolated run)`);
+    const results = [];
+    for (const name of names) {
+      const observations = [];
+      for (const size of knownSizes) {
+        const result = await runChild(name, size);
+        observations.push(result);
+        results.push({ fixture: name, bytes: size, status: result.status, elapsedMs: result.elapsedMs });
+        if (result.status === "ERROR") console.error(`  ${name} ${size}: ${result.error}`);
+      }
+      const threshold = await findExactThreshold(name, observations);
+      console.log(`\n${name}: ${threshold ? JSON.stringify(threshold) : "no timeout observed in tested sizes"}`);
+    }
+    console.table(results.map(result => ({
+      fixture: result.fixture,
+      bytes: result.bytes,
+      status: result.status,
+      "conversion ms": result.elapsedMs?.toFixed(3) ?? (result.status === "TIMEOUT" ? `>${timeoutMs}` : "—")
+    })));
+
+    printComplexProfile(await runChild("complex", 500_000, true));
   }
 }
