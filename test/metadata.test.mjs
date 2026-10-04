@@ -72,9 +72,13 @@ test("OAuth and MCP discovery endpoints return public JSON through Worker GET an
             grant_types_supported: ["implicit", "authorization_code"],
             scopes_supported: ["openid", "profile"],
             response_types_supported: ["code", "token"],
-            token_endpoint_auth_methods_supported: ["none"]
+            token_endpoint_auth_methods_supported: ["none"],
+            agent_auth: {
+              register_uri: host + "/auth.md#agent-registration",
+              identity_types_supported: [],
+              credential_types_supported: []
+            }
           });
-          assert.equal("agent_auth" in data, false);
         }
       }
     }
@@ -170,6 +174,7 @@ test("auth.md documents discovery, manual registration, and separate signature v
   for (const heading of [
     "Disclaimer",
     "OpenID Connect / OAuth 2.0 registration",
+    "Agent registration",
     "MCP tool discovery",
     "HTTP message signature verification",
     "Contact for credential registration"
@@ -182,11 +187,43 @@ test("auth.md documents discovery, manual registration, and separate signature v
   assert.match(auth, /no automated credential issuance/);
   assert.match(auth, /admin@hussamfaroug\.com/);
   assert.match(auth, /not OAuth token verification keys/);
+  assert.match(auth, /identity_types_supported is empty/);
+  assert.match(auth, /credential_types_supported is empty/);
+  assert.match(auth, /Claim and revocation URLs are omitted/);
+  assert.match(auth, /do not POST registration requests/);
   for (const path of [
     "/.well-known/openid-configuration", "/.well-known/oauth-authorization-server",
     "/.well-known/oauth-protected-resource", "/.well-known/mcp/server-card.json",
     "/.well-known/agent-skills/", "/.well-known/http-message-signatures-directory"
   ]) assert.ok(auth.includes(origin + path));
+});
+
+test("agent registration metadata links root instructions without advertising unavailable APIs", async () => {
+  const response = await worker.fetch(new Request(origin + "/.well-known/oauth-authorization-server"), {});
+  const { agent_auth } = await response.json();
+  assert.deepEqual(Object.keys(agent_auth).sort(), [
+    "credential_types_supported", "identity_types_supported", "register_uri"
+  ]);
+  const registrationUrl = new URL(agent_auth.register_uri);
+  assert.equal(registrationUrl.origin, origin);
+  assert.equal(registrationUrl.pathname, "/auth.md");
+  assert.equal(registrationUrl.hash, "#agent-registration");
+  for (const method of ["GET", "HEAD"]) {
+    const instructions = await worker.fetch(new Request(registrationUrl, { method }), {});
+    assert.equal(instructions.status, 200);
+    assert.equal(instructions.redirected, false);
+    assert.equal(instructions.headers.get("Content-Type"), "text/markdown");
+    assert.equal(instructions.headers.get("Access-Control-Allow-Origin"), "*");
+    assert.equal(instructions.headers.get("Cache-Control"), "public, max-age=3600");
+    const text = await instructions.text();
+    if (method === "HEAD") assert.equal(text, "");
+    else {
+      assert.match(text, /## Agent registration/);
+      assert.match(text, /mailto:admin@hussamfaroug\.com/);
+    }
+  }
+  const post = await worker.fetch(new Request(registrationUrl, { method: "POST" }), {});
+  assert.equal(post.status, 405);
 });
 
 test("WebMCP registration uses the shared tool and executes without network access", async () => {
