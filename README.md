@@ -52,7 +52,10 @@ Run `npm ci` and then `node scripts/benchmark-production.mjs --iterations 20 --l
 to measure the production Markdown route locally (1–25 measured requests per page).
 The script sends read-only GETs
 with `Accept: text/markdown`, discovers real HTML pages at the configured
-`wrangler.toml` origin, and selects pages nearest 10 KB, 100 KB, and 500 KB.
+`wrangler.toml` origin, and selects up to three distinct pages nearest 10 KB,
+100 KB, and 500 KB. If only one or two eligible pages exist, it measures those
+pages and reports incomplete target-size coverage without duplicating pages.
+Discovery still fails if no eligible HTML pages exist.
 Custom fixture HTML cannot be injected through this public proxy, so results
 identify the measured page and its actual HTML size; they are not fixture results.
 

@@ -201,18 +201,30 @@ async function discoverPages(origin, worker) {
       }
     }
   }
-  if (candidates.length < 3) {
-    throw new Error(`Found only ${candidates.length} eligible HTML page(s) at the configured origin; at least three distinct pages are needed. No HTML fixtures are injected.`);
+  if (!candidates.length) {
+    throw new Error("Found no eligible HTML pages at the configured origin. No HTML fixtures are injected.");
   }
+  if (candidates.length < TARGETS.length) {
+    console.warn(`Found only ${candidates.length} eligible HTML page(s); measuring available distinct pages with incomplete target-size coverage. No HTML fixtures are injected.`);
+  }
+  const count = Math.min(candidates.length, TARGETS.length);
   let best;
-  for (const first of candidates) for (const second of candidates) for (const third of candidates) {
-    if (first.path === second.path || first.path === third.path || second.path === third.path) continue;
-    const pages = [first, second, third];
-    const score = pages.reduce((sum, page, index) =>
-      sum + Math.abs(Math.log(Math.max(1, page.sourceHtmlBytes) / TARGETS[index].bytes)), 0);
-    if (!best || score < best.score) best = { score, pages };
+  function select(pages = [], index = 0, score = 0) {
+    if (pages.length === count) {
+      if (!best || score < best.score) best = { score, pages };
+      return;
+    }
+    if (TARGETS.length - index < count - pages.length) return;
+    const target = TARGETS[index];
+    for (const page of candidates) {
+      if (pages.some(selected => selected.path === page.path)) continue;
+      select([...pages, { ...target, ...page }], index + 1,
+        score + Math.abs(Math.log(Math.max(1, page.sourceHtmlBytes) / target.bytes)));
+    }
+    select(pages, index + 1, score);
   }
-  return TARGETS.map((target, index) => ({ ...target, ...best.pages[index] }));
+  select();
+  return best.pages;
 }
 
 async function requestMarkdown(worker, page, iteration, warmup) {
@@ -331,7 +343,7 @@ const result = {
   iterations: options.iterations,
   warmups: options.warmups,
   unit: "ms",
-  methodology: "Sequential, read-only GET requests with Accept: text/markdown. Three real HTML source pages selected closest to 10,000/100,000/500,000 bytes; custom fixtures cannot be injected through this proxy. Total latency includes public-network latency and full Markdown response read.",
+  methodology: "Sequential, read-only GET requests with Accept: text/markdown. Up to three distinct real HTML source pages selected closest to 10,000/100,000/500,000 bytes; fewer pages mean incomplete target-size coverage. Custom fixtures cannot be injected through this proxy. Total latency includes public-network latency and full Markdown response read.",
   baselineAvailable: false,
   success: fixtures.every(fixture => fixture.errors === 0),
   fixtures

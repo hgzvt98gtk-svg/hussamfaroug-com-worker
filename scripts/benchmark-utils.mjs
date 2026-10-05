@@ -148,7 +148,8 @@ export function formatBenchmarkMarkdown(current, comparison) {
 - Target: \`${current.target}\`
 - Iterations per page: ${current.iterations}; warmups discarded: ${current.warmups}
 - Method: read-only GET requests to real production HTML pages with \`Accept: text/markdown\`.
-- Limitation: the configured origin cannot accept injected fixture HTML through the public read-only proxy. The pages below are real origin pages selected closest to 10 KB, 100 KB, and 500 KB source sizes; they are not generated fixtures.
+- Limitation: the configured origin cannot accept injected fixture HTML through the public read-only proxy. Up to three distinct real origin pages are selected closest to 10 KB, 100 KB, and 500 KB source sizes; they are not generated fixtures.
+- Coverage: ${current.fixtures.length} of 3 target slots measured. Fewer pages mean incomplete target-size coverage; missing sizes are not measured or filled with duplicate pages.
 - Conversion timing: production currently does not emit a \`Server-Timing\` header. The script parses it when present; Cloudflare's sampled internal metrics are not request-level fixture measurements and are not substituted here.
 - Thresholds: fail for any non-200/request error, total or conversion p99/max above 500 ms, or a compatible fixture mean more than 20% worse than its baseline. A >20% mean change is an investigation signal, not a release verdict from one small sample.
 - Baseline: ${baseline}
