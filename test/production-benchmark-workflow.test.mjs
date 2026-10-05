@@ -28,7 +28,7 @@ test("write permissions are isolated to result commits and issue handling", () =
 
 test("scheduled results are artifact-backed and do not edit deployment workflow", () => {
   assert.match(workflow, /actions\/upload-artifact@v4/);
-  assert.match(workflow, /actions\/download-artifact@v4/);
+  assert.equal((workflow.match(/actions\/download-artifact@87c55149d96e628cc2ef7e6fc2aab372015aec85 # v4\.1\.3/g) || []).length, 2);
   assert.match(workflow, /GITHUB_STEP_SUMMARY/);
   assert.match(workflow, /benchmark-results\/baseline\.json/);
   assert.match(workflow, /benchmark-results\/page-baseline\.json/);
