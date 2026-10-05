@@ -41,6 +41,21 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Validate Cloudflare credentials
+        shell: bash
+        run: |
+          if [[ ! "$CLOUDFLARE_API_TOKEN" =~ ^[A-Za-z0-9_-]+$ ]]; then
+            echo "::error::Set CLOUDFLARE_API_TOKEN to the raw Cloudflare API token value, without an authorization scheme prefix, quotes, spaces, or newlines."
+            exit 1
+          fi
+          if [[ -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::error::Set CLOUDFLARE_ACCOUNT_ID to the account targeted by the API token."
+            exit 1
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v4
         with:

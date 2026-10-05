@@ -6,6 +6,41 @@ import test from "node:test";
 const workflow = readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
 const step = workflow.split("      - name: Re-enable observability\n")[1];
 
+test("deployment validates raw Cloudflare credentials before invoking Wrangler without logging secrets", () => {
+  const deploy = workflow.split("  deploy:\n")[1];
+  const validation = deploy.split("      - name: Validate Cloudflare credentials\n")[1]?.split("      - name: Deploy Worker\n")[0];
+  assert.ok(validation, "credential validation step exists");
+  assert.ok(deploy.indexOf("name: Validate Cloudflare credentials") < deploy.indexOf("uses: cloudflare/wrangler-action@v4"));
+  assert.match(validation, /shell: bash/);
+  assert.match(validation, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
+  assert.match(validation, /CLOUDFLARE_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/);
+  const script = validation.match(/        run: \|\n([\s\S]*?)        env:/)?.[1];
+  assert.ok(script, "credential validation shell command exists");
+  const token = "synthetic-token_123";
+  const run = env => spawnSync("bash", ["--noprofile", "--norc", "-e", "-c", script], { env, encoding: "utf8" });
+  const valid = run({ CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: "test-account" });
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.equal(valid.stdout + valid.stderr, "");
+
+  for (const invalid of [undefined, "", "Bearer" + " " + token, `"${token}"`, `'${token}'`, ` ${token}`, `${token} `, `${token}\n`, `${token}\r\n`, `${token}\textra`]) {
+    const env = { CLOUDFLARE_ACCOUNT_ID: "test-account" };
+    if (invalid !== undefined) env.CLOUDFLARE_API_TOKEN = invalid;
+    const result = run(env);
+    assert.notEqual(result.status, 0, "malformed or missing tokens must fail validation");
+    assert.match(result.stdout, /::error::Set CLOUDFLARE_API_TOKEN to the raw Cloudflare API token value/);
+    assert.ok(!(result.stdout + result.stderr).includes(token), "token values must not be logged");
+  }
+
+  for (const account of [undefined, ""]) {
+    const env = { CLOUDFLARE_API_TOKEN: token };
+    if (account !== undefined) env.CLOUDFLARE_ACCOUNT_ID = account;
+    const result = run(env);
+    assert.notEqual(result.status, 0, "missing account IDs must fail validation");
+    assert.match(result.stdout, /::error::Set CLOUDFLARE_ACCOUNT_ID/);
+    assert.ok(!(result.stdout + result.stderr).includes(token));
+  }
+});
+
 test("deployment verifies production discovery after publishing with Node 22", () => {
   const deploy = workflow.split("  deploy:\n")[1];
   assert.match(deploy, /uses: actions\/setup-node@v6\s+with:\s+node-version: "22"/);

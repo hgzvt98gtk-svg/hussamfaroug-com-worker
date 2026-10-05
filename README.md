@@ -23,6 +23,17 @@ Go to your GitHub repo → **Settings → Secrets and variables → Actions → 
 | `CLOUDFLARE_ACCOUNT_ID` | `ee1ab37acbedc81c70af09ffc0c67501` |
 | `CLOUDFLARE_API_TOKEN` | (the token you just created) |
 
+Store only the raw API token value, not a token ID, Global API Key, or an
+Authorization header. Do not include quotes, spaces, or newlines.
+The workflow checks the format before deploying; this does not verify token
+validity or permissions.
+
+If deployment reports Cloudflare error `6111` (invalid Authorization header)
+or `9106` (authentication failed), replace `CLOUDFLARE_API_TOKEN` in the
+repository's Actions secrets with a valid token created using the template
+above, scoped to `CLOUDFLARE_ACCOUNT_ID`, then run the workflow again.
+Code changes cannot repair an invalid or revoked repository secret.
+
 ### 3. Push to main
 
 Any push to `main` now automatically deploys the Worker via `wrangler deploy`.
