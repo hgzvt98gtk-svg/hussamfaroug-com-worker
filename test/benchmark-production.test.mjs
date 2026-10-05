@@ -53,22 +53,26 @@ async function benchmark(pages, { sitemap = true, status = 200 } = {}) {
   }
 }
 
-test("single-page origin completes the CLI and reports incomplete coverage", async () => {
-  const { result, stderr } = await benchmark([{ path: "/", bytes: 12_000 }], { sitemap: false });
-  assert.equal(result.success, true);
-  assert.equal(result.fixtures.length, 1);
-  const fixture = result.fixtures[0];
-  assert.equal(fixture.name, "10kb");
-  assert.equal(fixture.path, "/");
-  assert.equal(fixture.sourceHtmlBytes, 12_000);
-  assert.equal(fixture.samples.length, 2);
-  assert.match(stderr, /incomplete target-size coverage/);
-  assert.match(result.methodology, /Up to three distinct/);
-  const comparison = compareBenchmarks(result);
-  assert.equal(comparison.passed, true);
-  assert.equal(comparison.baselineEstablished, true);
-  assert.match(formatBenchmarkMarkdown(result, comparison), /Coverage: 1 of 3 target slots measured/);
-});
+for (const sitemap of [false, true]) {
+  test(`single-page origin completes the CLI and reports incomplete coverage (sitemap: ${sitemap})`, async () => {
+    const { result, stderr } = await benchmark([{ path: "/", bytes: 12_000 }], { sitemap });
+    assert.equal(result.schemaVersion, 1);
+    assert.equal(result.type, "production-real-page-benchmark");
+    assert.equal(result.success, true);
+    assert.equal(result.fixtures.length, 1);
+    const fixture = result.fixtures[0];
+    assert.equal(fixture.name, "10kb");
+    assert.equal(fixture.path, "/");
+    assert.equal(fixture.sourceHtmlBytes, 12_000);
+    assert.equal(fixture.samples.length, 2);
+    assert.match(stderr, /incomplete target-size coverage/);
+    assert.match(result.methodology, /Up to three distinct/);
+    const comparison = compareBenchmarks(result);
+    assert.equal(comparison.passed, true);
+    assert.equal(comparison.baselineEstablished, true);
+    assert.match(formatBenchmarkMarkdown(result, comparison), /Coverage: 1 of 3 target slots measured/);
+  });
+}
 
 test("single large page is assigned to its closest target, not always 10kb", async () => {
   const { result } = await benchmark([{ path: "/", bytes: 450_000 }]);
@@ -76,13 +80,16 @@ test("single large page is assigned to its closest target, not always 10kb", asy
 });
 
 test("two-page origin measures distinct pages in the closest target slots", async () => {
-  const { result } = await benchmark([
+  const { result, stderr } = await benchmark([
     { path: "/", bytes: 100_000 }, { path: "/large", bytes: 500_000 }
   ], { sitemap: false });
   assert.deepEqual(result.fixtures.map(page => [page.name, page.path]), [
     ["100kb", "/"], ["500kb", "/large"]
   ]);
   assert.equal(result.success, true);
+  assert.ok(result.fixtures.every(page => page.samples.length === 2));
+  assert.match(stderr, /Found only 2 eligible HTML page\(s\).*incomplete target-size coverage/);
+  assert.match(formatBenchmarkMarkdown(result, compareBenchmarks(result)), /Coverage: 2 of 3 target slots measured/);
 });
 
 test("three-target selection is preserved when more pages are available", async () => {
