@@ -23,6 +23,22 @@ Go to your GitHub repo → **Settings → Secrets and variables → Actions → 
 | `CLOUDFLARE_ACCOUNT_ID` | `ee1ab37acbedc81c70af09ffc0c67501` |
 | `CLOUDFLARE_API_TOKEN` | (the token you just created) |
 
+Secret format requirements (checked by `scripts/cloudflare-credentials.mjs`
+before Wrangler runs):
+
+- `CLOUDFLARE_API_TOKEN` must be a scoped **API token** pasted as the raw
+  value only. Do not add a `Bearer ` prefix, quotes, or a `NAME=` prefix; the
+  workflow strips these and surrounding whitespace/newlines, but rejects values
+  with spaces or line breaks inside them. The Global API Key (37 hex characters)
+  and Origin CA keys (`v1.0-…`) are rejected because Cloudflare answers them
+  with `Invalid format for Authorization header [code: 6111]`.
+- `CLOUDFLARE_ACCOUNT_ID` must be the 32-character hexadecimal account ID.
+
+If deployment still fails with `Authentication failed [code: 9106]` after this
+check passes, the token is expired, revoked, or lacks Workers permissions;
+create a new token from the **Edit Cloudflare Workers** template and update the
+secret.
+
 ### 3. Push to main
 
 Any push to `main` now automatically deploys the Worker via `wrangler deploy`.

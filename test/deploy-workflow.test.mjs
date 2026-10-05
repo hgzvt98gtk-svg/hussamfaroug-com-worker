@@ -14,10 +14,23 @@ test("deployment verifies production discovery after publishing with Node 22", (
   assert.doesNotMatch(deploy, /continue-on-error:/);
 });
 
+test("deployment validates and normalizes Cloudflare secrets before Wrangler runs", () => {
+  const deploy = workflow.split("  deploy:\n")[1];
+  const validate = deploy.split("      - name: Validate Cloudflare credentials\n")[1]?.split("\n\n")[0];
+  assert.ok(validate, "credential validation step exists");
+  assert.match(validate, /run: node scripts\/cloudflare-credentials\.mjs/);
+  assert.match(validate, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
+  assert.match(validate, /CLOUDFLARE_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/);
+  assert.ok(deploy.indexOf("name: Validate Cloudflare credentials") < deploy.indexOf("command: deploy"));
+  assert.match(deploy, /apiToken: \$\{\{ env\.CLOUDFLARE_API_TOKEN \}\}/);
+  assert.match(deploy, /accountId: \$\{\{ env\.CLOUDFLARE_ACCOUNT_ID \}\}/);
+  assert.equal((deploy.match(/secrets\./g) || []).length, 2, "raw secrets are only read by the validation step");
+});
+
 test("observability PATCH expands secret-backed authorization and propagates HTTP failures", () => {
   assert.ok(step, "observability step exists");
-  assert.match(step, /CF_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/);
-  assert.match(step, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
+  assert.match(step, /CF_ACCOUNT_ID: \$\{\{ env\.CLOUDFLARE_ACCOUNT_ID \}\}/);
+  assert.match(step, /CLOUDFLARE_API_TOKEN: \$\{\{ env\.CLOUDFLARE_API_TOKEN \}\}/);
   const script = step.match(/        run: \|\n([\s\S]*?)        env:/)?.[1];
   assert.ok(script, "observability shell command exists");
   const env = { CF_ACCOUNT_ID: "test-account", CLOUDFLARE_API_TOKEN: "test-token-$literal" };

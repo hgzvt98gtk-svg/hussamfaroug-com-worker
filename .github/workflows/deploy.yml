@@ -41,11 +41,21 @@ jobs:
         with:
           node-version: "22"
 
+      # Normalizes pasted secrets (surrounding whitespace/newlines, quotes, a
+      # leading "Bearer " prefix) and rejects Global API Keys or other values
+      # that make Cloudflare answer "Invalid format for Authorization header".
+      # The masked, normalized values are exported to later steps via GITHUB_ENV.
+      - name: Validate Cloudflare credentials
+        run: node scripts/cloudflare-credentials.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
 
       - name: Re-enable observability
@@ -56,8 +66,8 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"observability":{"enabled":true,"head_sampling_rate":1,"redact_query_string":true,"logs":{"enabled":true,"head_sampling_rate":1,"persist":true,"invocation_logs":true},"traces":{"enabled":true,"persist":true,"head_sampling_rate":1}}}'
         env:
-          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ env.CLOUDFLARE_API_TOKEN }}
 
       - name: Verify production discovery metadata
         run: node scripts/verify-deployment.mjs https://hussamfaroug.com
