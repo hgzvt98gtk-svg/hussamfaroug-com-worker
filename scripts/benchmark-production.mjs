@@ -343,7 +343,7 @@ const result = {
   iterations: options.iterations,
   warmups: options.warmups,
   unit: "ms",
-  methodology: "Sequential, read-only GET requests with Accept: text/markdown. Up to three distinct real HTML source pages selected closest to 10,000/100,000/500,000 bytes; fewer pages mean incomplete target-size coverage. Custom fixtures cannot be injected through this proxy. Total latency includes public-network latency and full Markdown response read.",
+  methodology: "Sequential, read-only GET requests with Accept: text/markdown. Up to three distinct real HTML source pages selected closest to 10,000/100,000/500,000 bytes; fewer pages mean incomplete target-size coverage.",
   baselineAvailable: false,
   success: fixtures.every(fixture => fixture.errors === 0),
   fixtures
