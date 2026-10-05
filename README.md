@@ -46,6 +46,32 @@ You can also trigger a deploy manually from the **Actions** tab → **Run workfl
 Run `npm ci` followed by `npm test` (or `node --test`). Markdown filtering uses
 Cloudflare's native `HTMLRewriter`; Node tests use its WebAssembly parser implementation.
 
+## Production benchmarks
+
+Run `npm ci` and then `node scripts/benchmark-production.mjs --iterations 20 --label manual`
+to measure the production Markdown route locally. The script sends read-only GETs
+with `Accept: text/markdown`, discovers real HTML pages at the configured
+`wrangler.toml` origin, and selects pages nearest 10 KB, 100 KB, and 500 KB.
+Custom fixture HTML cannot be injected through this public proxy, so results
+identify the measured page and its actual HTML size; they are not fixture results.
+
+Use **Actions → Production benchmark → Run workflow** to run the same check in
+GitHub Actions. The workflow publishes JSON and Markdown artifacts and a step
+summary. Scheduled runs at 19:00 UTC commit timestamped results under
+`benchmark-results/`; successful 24h/48h checkpoints also update
+`reports/24h-report.md` and `reports/48h-report.md`. `baseline.json` contains
+Cloudflare-reported Worker metrics only; the first successful scheduled page
+benchmark establishes the separate `fixture-baseline.json`.
+
+The workflow fails for any non-200/request error, total or exposed conversion
+timing p99/max over 500 ms, or a compatible page's mean more than 20% worse than
+its benchmark baseline. A >20% mean change is an investigation signal, not a
+release verdict from one small sample. The Worker currently does not emit
+`Server-Timing`, so conversion-stage values are reported as unavailable unless
+that header is exposed. Production page timings include network latency and use
+native HTMLRewriter; they are not directly comparable with local Node/WASM
+figures. These checks complement, not replace, Cloudflare observability.
+
 ## Branch protection (fixes CASB findings)
 
 After your first successful workflow run, enable branch protection in GitHub:
