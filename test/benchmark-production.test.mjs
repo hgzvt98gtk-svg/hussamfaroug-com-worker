@@ -76,13 +76,18 @@ test("single large page is assigned to its closest target, not always 10kb", asy
 });
 
 test("two-page origin measures distinct pages in the closest target slots", async () => {
-  const { result } = await benchmark([
+  const { result, stderr } = await benchmark([
     { path: "/", bytes: 100_000 }, { path: "/large", bytes: 500_000 }
   ], { sitemap: false });
   assert.deepEqual(result.fixtures.map(page => [page.name, page.path]), [
     ["100kb", "/"], ["500kb", "/large"]
   ]);
   assert.equal(result.success, true);
+  assert.match(stderr, /incomplete target-size coverage/);
+  const comparison = compareBenchmarks(result);
+  assert.equal(comparison.passed, true);
+  assert.equal(comparison.baselineEstablished, true);
+  assert.match(formatBenchmarkMarkdown(result, comparison), /Coverage: 2 of 3 target slots measured/);
 });
 
 test("three-target selection is preserved when more pages are available", async () => {
