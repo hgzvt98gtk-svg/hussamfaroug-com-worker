@@ -1,22 +1,20 @@
-export const SITE_INFO_TOOL = Object.freeze({
-  name: "get_site_info",
-  description: "Get the public site name and URL in the browser using WebMCP. Read-only; no HTTP MCP endpoint.",
-  inputSchema: { type: "object", properties: {}, additionalProperties: false }
-});
+import { DISCOVERY_ENDPOINTS as E, SITE_INFO_TOOL } from "./constants.js";
+
+export { SITE_INFO_TOOL };
 
 const LINKS = [
-  { path: "/.well-known/openid-configuration", rel: "service-meta", type: "application/json", title: "OpenID Connect Discovery", description: "Phase 1 authentication discovery metadata" },
-  { path: "/.well-known/oauth-authorization-server", rel: "oauth-authorization-server", type: "application/json", title: "OAuth Authorization Server Discovery", description: "Issuer and manual agent registration metadata; no OAuth service is implemented" },
-  { path: "/.well-known/oauth-protected-resource", rel: "oauth-protected-resource", type: "application/json", title: "OAuth Protected Resource Metadata", description: "Public resource identifier, discovery link, and documentation" },
-  { path: "/.well-known/mcp/server-card.json", rel: "service-meta", type: "application/json", title: "Browser MCP Server Card", description: "Browser-only WebMCP capabilities and tool input schemas" },
-  { path: "/.well-known/api-catalog", rel: "api-catalog", type: "application/linkset+json", title: "Public API Linkset", description: "Links to implemented public discovery resources" },
-  { path: "/.well-known/agent-card.json", rel: "agent", type: "application/json", title: "Public Site Metadata", description: "Public site information, not an agent-to-agent service" },
-  { path: "/.well-known/ai-catalog.json", rel: "service-meta", type: "application/json", title: "Public Resource Catalog", description: "Catalog of implemented public site resources" },
-  { path: "/.well-known/agent-skills/index.json", rel: "service-meta", type: "application/json", title: "Browser Skills Index", description: "Browser-only WebMCP tool documentation" },
-  { path: "/.well-known/agent-skills/get_site_info/SKILL.md", rel: "service-doc", type: "text/markdown", title: "get_site_info", description: SITE_INFO_TOOL.description },
-  { path: "/auth.md", rel: "service-doc", type: "text/markdown", title: "Agent Authentication Documentation", description: "Public access, Phase 1 OAuth discovery, registration contact, and signature verification" },
-  { path: "/.well-known/health", rel: "status", type: "application/json", title: "Health Check", description: "Worker health endpoint" },
-  { path: "/.well-known/http-message-signatures-directory", rel: "service-meta", type: "application/json", title: "HTTP Message Signature Directory", description: "Public verification keys for HTTP message signatures; not authentication registration" }
+  { path: E.openid_config, rel: "service-meta", type: "application/json", title: "OpenID Connect Discovery", description: "Phase 1 authentication discovery metadata" },
+  { path: E.oauth_auth_server, rel: "oauth-authorization-server", type: "application/json", title: "OAuth Authorization Server Discovery", description: "Issuer and manual agent registration metadata; no OAuth service is implemented" },
+  { path: E.oauth_protected_resource, rel: "oauth-protected-resource", type: "application/json", title: "OAuth Protected Resource Metadata", description: "Public resource identifier, discovery link, and documentation" },
+  { path: E.mcp_server_card, rel: "service-meta", type: "application/json", title: "Browser MCP Server Card", description: "Browser-only WebMCP capabilities and tool input schemas" },
+  { path: E.api_catalog, rel: "api-catalog", type: "application/linkset+json", title: "Public API Linkset", description: "Links to implemented public discovery resources" },
+  { path: E.agent_card, rel: "agent", type: "application/json", title: "Public Site Metadata", description: "Public site information, not an agent-to-agent service" },
+  { path: E.ai_catalog, rel: "service-meta", type: "application/json", title: "Public Resource Catalog", description: "Catalog of implemented public site resources" },
+  { path: E.agent_skills_index, rel: "service-meta", type: "application/json", title: "Browser Skills Index", description: "Browser-only WebMCP tool documentation" },
+  { path: E.site_info_skill, rel: "service-doc", type: "text/markdown", title: SITE_INFO_TOOL.name, description: SITE_INFO_TOOL.description },
+  { path: E.auth_md, rel: "service-doc", type: "text/markdown", title: "Agent Authentication Documentation", description: "Public access, Phase 1 OAuth discovery, registration contact, and signature verification" },
+  { path: E.health, rel: "status", type: "application/json", title: "Health Check", description: "Worker health endpoint" },
+  { path: E.http_message_signatures_directory, rel: "service-meta", type: "application/json", title: "HTTP Message Signature Directory", description: "Public verification keys for HTTP message signatures; not authentication registration" }
 ];
 
 export function discoveryLinks(origin) {
@@ -25,10 +23,10 @@ export function discoveryLinks(origin) {
 
 export function isLegacyDiscoveryPath(pathname) {
   if ([
-    "/.well-known/openid-configuration",
-    "/.well-known/oauth-authorization-server",
-    "/.well-known/oauth-protected-resource",
-    "/.well-known/mcp/server-card.json"
+    E.openid_config,
+    E.oauth_auth_server,
+    E.oauth_protected_resource,
+    E.mcp_server_card
   ].includes(pathname)) return false;
   return /^\/\.well-known\/(?:oauth-authorization-server|oauth-protected-resource|openid-configuration|mcp(?:\.json)?|agent\.json)(?:\/|$)/.test(pathname)
     || /^\/(?:a2a|mcp|oauth|token)(?:\/|$)/.test(pathname)
