@@ -1,0 +1,194 @@
+name: Production benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Measured requests per real page (warmups are additional)
+        required: true
+        default: "20"
+        type: number
+      checkpoint:
+        description: Report label for a manually triggered run
+        required: true
+        default: manual
+        type: choice
+        options:
+          - manual
+          - 24h
+          - 48h
+          - ongoing
+  # Daily at 19:00 UTC: this is shortly after the deployment anniversary.
+  # Labels are calculated from the exact 2026-10-04T18:31:55Z deployment time;
+  # unlike a weekly Tuesday cron, this captures both elapsed-day checkpoints.
+  # The schedule may be removed after the 48h checkpoint; later runs are ongoing.
+  schedule:
+    - cron: "0 19 * * *"
+
+concurrency:
+  group: production-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      label: ${{ steps.label.outputs.label }}
+      timestamp: ${{ steps.label.outputs.timestamp }}
+      completed: ${{ steps.measure.outputs.completed }}
+      regression: ${{ steps.compare.outputs.regression }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - id: label
+        name: Select checkpoint label
+        env:
+          DISPATCH_LABEL: ${{ inputs.checkpoint }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            LABEL="$(node --input-type=module -e 'import { selectCheckpointLabel } from "./scripts/benchmark-utils.mjs"; console.log(selectCheckpointLabel(new Date()))')"
+          else
+            LABEL="$DISPATCH_LABEL"
+          fi
+          case "$LABEL" in manual|baseline|24h|48h|ongoing) ;; *) echo "Invalid checkpoint label" >&2; exit 1 ;; esac
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$(date -u +%Y-%m-%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
+      - id: measure
+        name: Measure production pages
+        env:
+          ITERATIONS: ${{ inputs.iterations || 20 }}
+          LABEL: ${{ steps.label.outputs.label }}
+        run: |
+          mkdir -p out
+          node scripts/benchmark-production.mjs \
+            --iterations "$ITERATIONS" \
+            --label "$LABEL" \
+            --output out/current.json
+          echo "completed=true" >> "$GITHUB_OUTPUT"
+      - id: compare
+        name: Compare with fixture baseline and write report
+        if: always() && steps.measure.outputs.completed == 'true'
+        continue-on-error: true
+        env:
+          LABEL: ${{ steps.label.outputs.label }}
+        run: |
+          set +e
+          PUBLISH_ARGS=()
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            case "$LABEL" in
+              24h) PUBLISH_ARGS+=(--publish-report reports/24h-report.md) ;;
+              48h) PUBLISH_ARGS+=(--publish-report reports/48h-report.md) ;;
+            esac
+          fi
+          node scripts/compare-benchmarks.mjs \
+            --current out/current.json \
+            --baseline benchmark-results/fixture-baseline.json \
+            --cloudflare-baseline benchmark-results/baseline.json \
+            --output out/comparison.json \
+            --report out/report.md \
+            "${PUBLISH_ARGS[@]}"
+          STATUS=$?
+          set -e
+          if [ -f out/comparison.json ]; then
+            REGRESSION="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).passed ? "false" : "true")' out/comparison.json)"
+            echo "regression=$REGRESSION" >> "$GITHUB_OUTPUT"
+          fi
+          echo "comparison_exit=$STATUS" >> "$GITHUB_OUTPUT"
+      - name: Add report to step summary
+        if: always() && hashFiles('out/report.md') != ''
+        run: cat out/report.md >> "$GITHUB_STEP_SUMMARY"
+      # The repo's workflows use major-version action references (for example
+      # actions/checkout@v6); keep artifact actions on their matching major.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-benchmark-${{ steps.label.outputs.label }}-${{ steps.label.outputs.timestamp }}
+          path: |
+            out/
+            benchmark-results/fixture-baseline.json
+            reports/24h-report.md
+            reports/48h-report.md
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Fail the run on regression
+        if: steps.measure.outputs.completed == 'true' && steps.compare.outputs.comparison_exit != '0'
+        run: exit 1
+
+  commit-results:
+    needs: benchmark
+    if: always() && github.event_name == 'schedule' && needs.benchmark.outputs.completed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: production-benchmark-${{ needs.benchmark.outputs.label }}-${{ needs.benchmark.outputs.timestamp }}
+          path: downloaded
+      - name: Commit scheduled results without triggering deployment
+        env:
+          LABEL: ${{ needs.benchmark.outputs.label }}
+          TIMESTAMP: ${{ needs.benchmark.outputs.timestamp }}
+        run: |
+          mkdir -p benchmark-results
+          cp downloaded/out/current.json "benchmark-results/${TIMESTAMP}-${LABEL}.json"
+          if [ -f downloaded/benchmark-results/fixture-baseline.json ]; then
+            cp downloaded/benchmark-results/fixture-baseline.json benchmark-results/fixture-baseline.json
+          fi
+          for report in 24h-report.md 48h-report.md; do
+            if [ -f "downloaded/reports/$report" ]; then cp "downloaded/reports/$report" "reports/$report"; fi
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmark-results reports
+          if git diff --cached --quiet; then
+            echo "No benchmark results changed."
+          else
+            git commit -m "[skip ci] Record production benchmark ($LABEL)"
+            git push
+          fi
+
+  regression-issue:
+    needs: benchmark
+    if: always() && github.event_name == 'schedule' && needs.benchmark.outputs.regression == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: production-benchmark-${{ needs.benchmark.outputs.label }}-${{ needs.benchmark.outputs.timestamp }}
+          path: downloaded
+      - name: Open or update the regression issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_STARTED_AT: ${{ github.run_started_at }}
+        run: |
+          DATE="$(date -u -d "$RUN_STARTED_AT" +%Y-%m-%d)"
+          TITLE="Production benchmark regression ($DATE)"
+          {
+            echo "Scheduled production benchmark detected a regression."
+            echo
+            echo "Workflow run: $GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID"
+            echo
+            cat downloaded/out/report.md
+          } > downloaded/issue-body.md
+          ISSUE="$(gh issue list --repo "$GH_REPO" --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$ISSUE" ]; then
+            gh issue edit "$ISSUE" --repo "$GH_REPO" --body-file downloaded/issue-body.md
+          else
+            ISSUE="$(gh issue create --repo "$GH_REPO" --title "$TITLE" --body-file downloaded/issue-body.md)"
+            ISSUE="${ISSUE##*/}"
+          fi
+          if gh label list --repo "$GH_REPO" --json name --jq '.[].name' | grep -Fxq performance; then
+            gh issue edit "$ISSUE" --repo "$GH_REPO" --add-label performance
+          fi
