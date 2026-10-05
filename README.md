@@ -49,7 +49,8 @@ Cloudflare's native `HTMLRewriter`; Node tests use its WebAssembly parser implem
 ## Production benchmarks
 
 Run `npm ci` and then `node scripts/benchmark-production.mjs --iterations 20 --label manual`
-to measure the production Markdown route locally. The script sends read-only GETs
+to measure the production Markdown route locally (1–25 measured requests per page).
+The script sends read-only GETs
 with `Accept: text/markdown`, discovers real HTML pages at the configured
 `wrangler.toml` origin, and selects pages nearest 10 KB, 100 KB, and 500 KB.
 Custom fixture HTML cannot be injected through this public proxy, so results

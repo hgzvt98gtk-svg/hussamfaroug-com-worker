@@ -29,7 +29,7 @@ function result({ total = 100, conversion = 20, status = 200, errors = 0 } = {})
     success: errors === 0,
     fixtures: [{
       name: "10kb", path: "/", sourceHtmlBytes: 10_000, sourceSha256: "same",
-      iterations: 20, errors, statusCodes: [String(status)],
+      iterations: 20, warmups: 0, errors, statusCodes: [String(status)],
       timings: {
         total: { mean: total, p99: total, max: total },
         serverTiming: { conversion: { mean: conversion, p99: conversion, max: conversion } }

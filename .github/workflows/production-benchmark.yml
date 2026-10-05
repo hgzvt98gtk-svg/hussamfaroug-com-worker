@@ -6,7 +6,7 @@ on:
       iterations:
         description: Measured requests per real page (warmups are additional)
         required: true
-        default: "20"
+        default: 20
         type: number
       checkpoint:
         description: Report label for a manually triggered run
@@ -19,8 +19,9 @@ on:
           - 48h
           - ongoing
   # Daily at 19:00 UTC: this is shortly after the deployment anniversary.
-  # Labels are calculated from the exact 2026-10-04T18:31:55Z deployment time;
-  # unlike a weekly Tuesday cron, this captures both elapsed-day checkpoints.
+  # Labels use the exact 2026-10-04T18:31:55Z deployment time: Oct 5 is 24h,
+  # Oct 6 is 48h, and later runs are ongoing (not Oct 6/Oct 7 checkpoints).
+  # A daily cron captures both elapsed-day checkpoints, unlike a weekly Tuesday cron.
   # The schedule may be removed after the 48h checkpoint; later runs are ongoing.
   schedule:
     - cron: "0 19 * * *"
@@ -73,7 +74,7 @@ jobs:
             --output out/current.json
           echo "completed=true" >> "$GITHUB_OUTPUT"
       - id: compare
-        name: Compare with fixture baseline and write report
+        name: Compare with real-page baseline and write report
         if: always() && steps.measure.outputs.completed == 'true'
         continue-on-error: true
         env:
@@ -182,7 +183,7 @@ jobs:
             echo
             cat downloaded/out/report.md
           } > downloaded/issue-body.md
-          ISSUE="$(gh issue list --repo "$GH_REPO" --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')"
+          ISSUE="$(gh issue list --repo "$GH_REPO" --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty')"
           if [ -n "$ISSUE" ]; then
             gh issue edit "$ISSUE" --repo "$GH_REPO" --body-file downloaded/issue-body.md
           else
