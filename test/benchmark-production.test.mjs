@@ -11,7 +11,7 @@ import { compareBenchmarks, formatBenchmarkMarkdown } from "../scripts/benchmark
 const exec = promisify(execFile);
 const script = fileURLToPath(new URL("../scripts/benchmark-production.mjs", import.meta.url));
 
-async function benchmark(pages, { sitemap = true, status = 200 } = {}) {
+async function benchmark(pages, { sitemap = true, status = 200, githubActions = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "benchmark-production-"));
   const output = join(directory, "current.json");
   try {
@@ -46,7 +46,9 @@ async function benchmark(pages, { sitemap = true, status = 200 } = {}) {
       process.argv = [process.execPath, script, "--iterations", "1", "--warmups", "1",
         "--output", output];
       await import(pathToFileURL(script));
-    `, JSON.stringify([pages, script, output, sitemap, status])]);
+    `, JSON.stringify([pages, script, output, sitemap, status])], {
+      env: { ...process.env, GITHUB_ACTIONS: String(githubActions) }
+    });
     return { result: JSON.parse(await readFile(output, "utf8")), stderr };
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -56,6 +58,9 @@ async function benchmark(pages, { sitemap = true, status = 200 } = {}) {
 test("single-page origin completes the CLI and reports incomplete coverage", async () => {
   const { result, stderr } = await benchmark([{ path: "/", bytes: 12_000 }], { sitemap: false });
   assert.equal(result.success, true);
+  assert.deepEqual(result.sampling, {
+    mode: "reduced-sample", requestedPages: 3, measuredPages: 1
+  });
   assert.equal(result.fixtures.length, 1);
   const fixture = result.fixtures[0];
   assert.equal(fixture.name, "10kb");
@@ -63,6 +68,8 @@ test("single-page origin completes the CLI and reports incomplete coverage", asy
   assert.equal(fixture.sourceHtmlBytes, 12_000);
   assert.equal(fixture.samples.length, 2);
   assert.match(stderr, /incomplete target-size coverage/);
+  assert.match(stderr, /^Reduced-sample mode:/);
+  assert.doesNotMatch(stderr, /::warning::/);
   assert.match(result.methodology, /Up to three distinct/);
   const comparison = compareBenchmarks(result);
   assert.equal(comparison.passed, true);
@@ -75,25 +82,32 @@ test("single large page is assigned to its closest target, not always 10kb", asy
   assert.equal(result.fixtures[0].name, "500kb");
 });
 
-test("two-page origin measures distinct pages in the closest target slots", async () => {
-  const { result } = await benchmark([
+test("two-page origin measures distinct pages and emits an Actions warning", async () => {
+  const { result, stderr } = await benchmark([
     { path: "/", bytes: 100_000 }, { path: "/large", bytes: 500_000 }
-  ], { sitemap: false });
+  ], { sitemap: false, githubActions: true });
   assert.deepEqual(result.fixtures.map(page => [page.name, page.path]), [
     ["100kb", "/"], ["500kb", "/large"]
   ]);
   assert.equal(result.success, true);
+  assert.deepEqual(result.sampling, {
+    mode: "reduced-sample", requestedPages: 3, measuredPages: 2
+  });
+  assert.match(stderr, /^::warning::Reduced-sample mode: found only 2 eligible HTML page\(s\)/);
 });
 
 test("three-target selection is preserved when more pages are available", async () => {
   const { result, stderr } = await benchmark([
     { path: "/", bytes: 10_000 }, { path: "/extra", bytes: 25_000 },
     { path: "/medium", bytes: 100_000 }, { path: "/large", bytes: 500_000 }
-  ]);
+  ], { githubActions: true });
   assert.deepEqual(result.fixtures.map(page => [page.name, page.path]), [
     ["10kb", "/"], ["100kb", "/medium"], ["500kb", "/large"]
   ]);
   assert.equal(stderr, "");
+  assert.deepEqual(result.sampling, {
+    mode: "full-sample", requestedPages: 3, measuredPages: 3
+  });
 });
 
 test("discovery still fails when no eligible HTML pages exist", async () => {

@@ -205,7 +205,8 @@ async function discoverPages(origin, worker) {
     throw new Error("Found no eligible HTML pages at the configured origin. No HTML fixtures are injected.");
   }
   if (candidates.length < TARGETS.length) {
-    console.warn(`Found only ${candidates.length} eligible HTML page(s); measuring available distinct pages with incomplete target-size coverage. No HTML fixtures are injected.`);
+    const annotation = process.env.GITHUB_ACTIONS === "true" ? "::warning::" : "";
+    console.warn(`${annotation}Reduced-sample mode: found only ${candidates.length} eligible HTML page(s); measuring available distinct pages with incomplete target-size coverage. No HTML fixtures are injected.`);
   }
   const count = Math.min(candidates.length, TARGETS.length);
   let best;
@@ -342,6 +343,11 @@ const result = {
   origin: origin.origin,
   iterations: options.iterations,
   warmups: options.warmups,
+  sampling: {
+    mode: pages.length < TARGETS.length ? "reduced-sample" : "full-sample",
+    requestedPages: TARGETS.length,
+    measuredPages: pages.length
+  },
   unit: "ms",
   methodology: "Sequential, read-only GET requests with Accept: text/markdown. Up to three distinct real HTML source pages selected closest to 10,000/100,000/500,000 bytes; fewer pages mean incomplete target-size coverage.",
   baselineAvailable: false,
