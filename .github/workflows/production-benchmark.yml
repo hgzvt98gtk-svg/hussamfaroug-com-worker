@@ -89,7 +89,7 @@ jobs:
           fi
           node scripts/compare-benchmarks.mjs \
             --current out/current.json \
-            --baseline benchmark-results/fixture-baseline.json \
+            --baseline benchmark-results/page-baseline.json \
             --cloudflare-baseline benchmark-results/baseline.json \
             --output out/comparison.json \
             --report out/report.md \
@@ -112,7 +112,7 @@ jobs:
           name: production-benchmark-${{ steps.label.outputs.label }}-${{ steps.label.outputs.timestamp }}
           path: |
             out/
-            benchmark-results/fixture-baseline.json
+            benchmark-results/page-baseline.json
             reports/24h-report.md
             reports/48h-report.md
           if-no-files-found: warn
@@ -140,8 +140,8 @@ jobs:
         run: |
           mkdir -p benchmark-results
           cp downloaded/out/current.json "benchmark-results/${TIMESTAMP}-${LABEL}.json"
-          if [ -f downloaded/benchmark-results/fixture-baseline.json ]; then
-            cp downloaded/benchmark-results/fixture-baseline.json benchmark-results/fixture-baseline.json
+          if [ -f downloaded/benchmark-results/page-baseline.json ]; then
+            cp downloaded/benchmark-results/page-baseline.json benchmark-results/page-baseline.json
           fi
           for report in 24h-report.md 48h-report.md; do
             if [ -f "downloaded/reports/$report" ]; then cp "downloaded/reports/$report" "reports/$report"; fi

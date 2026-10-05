@@ -127,10 +127,10 @@ export function formatBenchmarkMarkdown(current, comparison) {
     return `| ${fixture.name} | \`${fixture.path}\` (${fixture.sourceHtmlBytes.toLocaleString()} B source HTML) | ${timing.p50.toFixed(2)} / ${timing.p99.toFixed(2)} / ${timing.max.toFixed(2)} ms | ${stages} | ${delta} | ${fixture.timings.responseBytes?.mean?.toFixed(0) ?? "n/a"} B | ${fixture.statusCodes.join(", ") || "none"} |`;
   });
   const baseline = comparison.baselineEstablished
-    ? "This successful run establishes the first fixture baseline; it was not compared with itself."
+    ? "This successful run establishes the first real-page baseline; it was not compared with itself."
     : current.baselineAvailable
-      ? "Mean comparisons apply only when the source page path, byte size, and SHA-256 match the fixture baseline."
-      : "No fixture baseline exists yet; absolute latency and response status checks still apply.";
+      ? "Mean comparisons apply only when the source page path, byte size, and SHA-256 match the real-page baseline."
+      : "No real-page baseline exists yet; absolute latency and response status checks still apply.";
   const details = comparison.regressions.length
     ? `\n## Regression signals\n\n${comparison.regressions.map(item => `- ${item}`).join("\n")}\n`
     : "\nNo regression conditions were detected in the measured requests.\n";
