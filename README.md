@@ -61,7 +61,7 @@ summary. Scheduled runs at 19:00 UTC commit timestamped results under
 `benchmark-results/`; successful 24h/48h checkpoints also update
 `reports/24h-report.md` and `reports/48h-report.md`. `baseline.json` contains
 Cloudflare-reported Worker metrics only; the first successful scheduled page
-benchmark establishes the separate `fixture-baseline.json`.
+benchmark establishes the separate `page-baseline.json`.
 
 The workflow fails for any non-200/request error, total or exposed conversion
 timing p99/max over 500 ms, or a compatible page's mean more than 20% worse than

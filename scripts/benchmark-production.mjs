@@ -227,6 +227,8 @@ async function requestMarkdown(worker, page, iteration, warmup) {
     const totalMs = performance.now() - started;
     const ray = response.headers.get("cf-ray");
     const cacheStatus = response.headers.get("cf-cache-status");
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() || null;
+    const tokenCount = response.headers.get("x-markdown-tokens");
     return {
       iteration,
       warmup,
@@ -234,8 +236,11 @@ async function requestMarkdown(worker, page, iteration, warmup) {
       totalMs,
       responseBytes,
       serverTiming: parseServerTiming(response.headers.get("server-timing")),
+      contentType,
+      markdownTokens: tokenCount === null ? null : tokenCount,
       cfRay: ray,
       cfCacheStatus: cacheStatus,
+      ...(!readError && response.status === 200 && contentType !== "text/markdown" ? { error: "unexpected content type" } : {}),
       ...(readError ? { error: readError } : {})
     };
   } catch (error) {
@@ -246,6 +251,8 @@ async function requestMarkdown(worker, page, iteration, warmup) {
       totalMs: performance.now() - started,
       responseBytes: null,
       serverTiming: {},
+      contentType: null,
+      markdownTokens: null,
       cfRay: null,
       cfCacheStatus: null,
       error: error?.name || "request failed"

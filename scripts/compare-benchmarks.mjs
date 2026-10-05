@@ -11,7 +11,8 @@ for (let index = 2; index < process.argv.length; index += 2) {
   if (!["--current", "--baseline", "--cloudflare-baseline", "--output", "--report", "--template", "--publish-report"].includes(flag) || !value) {
     throw new Error("Usage: node scripts/compare-benchmarks.mjs --current FILE --output FILE --report FILE [--baseline FILE] [--template FILE] [--publish-report FILE]");
   }
-  options[flag.slice(2)] = value;
+  const name = flag.slice(2).replace(/-([a-z])/g, (_, character) => character.toUpperCase());
+  options[name] = value;
 }
 for (const required of ["current", "output", "report"]) {
   if (!options[required]) throw new Error(`Missing --${required}`);
