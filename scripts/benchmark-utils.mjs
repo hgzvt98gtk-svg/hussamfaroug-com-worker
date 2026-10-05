@@ -69,11 +69,14 @@ function compatibleFixture(current, previous) {
 export function compareBenchmarks(current, baseline = null) {
   const regressions = [];
   const fixtureComparisons = [];
-  const totalRequests = current.fixtures.reduce((sum, fixture) => sum + fixture.iterations, 0);
+  const totalRequests = current.fixtures.reduce((sum, fixture) => sum + fixture.iterations + (fixture.warmups || 0), 0);
   const errors = current.fixtures.reduce((sum, fixture) => sum + fixture.errors, 0);
 
   for (const fixture of current.fixtures) {
-    if (fixture.errors > 0) regressions.push(`${fixture.name}: ${fixture.errors} request error(s), error rate ${(fixture.errors / fixture.iterations * 100).toFixed(2)}%`);
+    if (fixture.errors > 0) {
+      const requests = fixture.iterations + (fixture.warmups || 0);
+      regressions.push(`${fixture.name}: ${fixture.errors} request error(s), error rate ${(fixture.errors / requests * 100).toFixed(2)}%`);
+    }
     for (const sample of fixture.samples) {
       if (sample.status !== 200 || sample.error) {
         regressions.push(`${fixture.name}: ${sample.error ? "request/body error" : `HTTP ${sample.status}`} on iteration ${sample.iteration}`);
@@ -98,7 +101,7 @@ export function compareBenchmarks(current, baseline = null) {
         if (currentStats?.mean !== undefined && previousStats?.mean > 0) {
           const delta = (currentStats.mean / previousStats.mean - 1) * 100;
           deltas[metric] = delta;
-          if (delta > 20) regressions.push(`${fixture.name}: ${metric} mean is ${delta.toFixed(2)}% worse than the fixture baseline (investigation signal)`);
+          if (delta > 20) regressions.push(`${fixture.name}: ${metric} mean is ${delta.toFixed(2)}% worse than the real-page baseline (investigation signal)`);
         }
       }
       comparison.meanDeltaPercent = deltas;

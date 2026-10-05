@@ -24,7 +24,10 @@ function parseArgs(args) {
     }
     if (flag === "--iterations" || flag === "--warmups") {
       const count = Number(value);
-      if (!Number.isInteger(count) || count < 1) throw new Error(`${flag} must be a positive integer`);
+      const maximum = flag === "--iterations" ? 25 : 10;
+      if (!Number.isInteger(count) || count < 1 || count > maximum) {
+        throw new Error(`${flag} must be an integer between 1 and ${maximum}`);
+      }
       options[flag.slice(2)] = count;
     } else {
       options[flag.slice(2)] = value;
@@ -53,7 +56,7 @@ function xmlEntities(value) {
   return value.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (entity, code) => {
     if (code[0] === "#") {
       const number = code[1].toLowerCase() === "x" ? Number.parseInt(code.slice(2), 16) : Number(code.slice(1));
-      return Number.isFinite(number) ? String.fromCodePoint(number) : entity;
+      return Number.isInteger(number) && number >= 0 && number <= 0x10ffff ? String.fromCodePoint(number) : entity;
     }
     return { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" }[code.toLowerCase()];
   });
@@ -96,47 +99,52 @@ async function sourceGet(url, accept) {
   });
 }
 
-function sameOriginPath(value, origin) {
+function sameOriginPath(value, origin, worker) {
   try {
     const url = new URL(value, origin);
-    return url.origin === origin.origin && !url.username && !url.password ? `${url.pathname}${url.search}` : null;
+    return [origin.origin, worker.origin].includes(url.origin) &&
+      !url.username && !url.password && !url.search && !url.hash ? url.pathname : null;
   } catch {
     return null;
   }
 }
 
-async function sitemapPaths(origin) {
+async function sitemapPaths(origin, worker) {
   const sitemapUrl = new URL("/sitemap.xml", origin);
   const response = await sourceGet(sitemapUrl, "application/xml, text/xml;q=0.9, */*;q=0.1");
-  if (response.status !== 200) return [];
+  if (response.status !== 200) {
+    await response.body?.cancel().catch(() => {});
+    return [];
+  }
   const type = (response.headers.get("content-type") || "").toLowerCase();
-  if (!type.includes("xml")) return [];
+  if (!type.includes("xml")) {
+    await response.body?.cancel().catch(() => {});
+    return [];
+  }
   const xml = decoder.decode(await readLimited(response, 2_000_000));
   let locations = [...xml.matchAll(/<loc\b[^>]*>([\s\S]*?)<\/loc>/gi)].map(match => xmlEntities(match[1].trim()));
   if (/<sitemapindex\b/i.test(xml)) {
     const childMaps = locations.slice(0, 5);
     locations = [];
     for (const location of childMaps) {
-      let childUrl;
-      try {
-        childUrl = new URL(location);
-      } catch {
+      const childPath = sameOriginPath(location, origin, worker);
+      if (!childPath) continue;
+      const child = await sourceGet(new URL(childPath, origin), "application/xml, text/xml;q=0.9, */*;q=0.1");
+      if (child.status !== 200 || !(child.headers.get("content-type") || "").toLowerCase().includes("xml")) {
+        await child.body?.cancel().catch(() => {});
         continue;
       }
-      if (childUrl.origin !== origin.origin) continue;
-      const child = await sourceGet(childUrl, "application/xml, text/xml;q=0.9, */*;q=0.1");
-      if (child.status !== 200 || !(child.headers.get("content-type") || "").toLowerCase().includes("xml")) continue;
       const body = decoder.decode(await readLimited(child, 2_000_000));
       locations.push(...[...body.matchAll(/<loc\b[^>]*>([\s\S]*?)<\/loc>/gi)].map(match => xmlEntities(match[1].trim())));
     }
   }
-  return [...new Set(locations.map(location => sameOriginPath(location, origin)).filter(Boolean))].slice(0, 50);
+  return [...new Set(locations.map(location => sameOriginPath(location, origin, worker)).filter(Boolean))].slice(0, 50);
 }
 
-function linkedPaths(html, origin) {
+function linkedPaths(html, origin, worker) {
   const candidates = [];
   for (const match of html.matchAll(/\bhref\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'=<>`]+))/gi)) {
-    const path = sameOriginPath(match[1] || match[2] || match[3], origin);
+    const path = sameOriginPath(match[1] || match[2] || match[3], origin, worker);
     if (path && !/\.(?:css|js|png|jpe?g|gif|svg|webp|ico|pdf|xml)(?:$|\?)/i.test(path)) candidates.push(path);
   }
   return [...new Set(candidates)];
@@ -163,8 +171,8 @@ async function originPage(path, origin) {
   };
 }
 
-async function discoverPages(origin) {
-  const paths = await sitemapPaths(origin).catch(() => []);
+async function discoverPages(origin, worker) {
+  const paths = await sitemapPaths(origin, worker).catch(() => []);
   paths.unshift("/");
   const seen = new Set();
   const candidates = [];
@@ -181,7 +189,7 @@ async function discoverPages(origin) {
       const response = await sourceGet(new URL("/", origin), "text/html");
       if (response.status === 200) {
         const html = decoder.decode(await readLimited(response));
-        for (const path of linkedPaths(html, origin)) {
+        for (const path of linkedPaths(html, origin, worker)) {
           if (seen.has(path)) continue;
           seen.add(path);
           const page = await originPage(path, origin).catch(() => null);
@@ -301,7 +309,7 @@ function printTable(fixtures) {
 
 parseArgs(process.argv.slice(2));
 const { origin, worker } = configuration();
-const pages = await discoverPages(origin);
+const pages = await discoverPages(origin, worker);
 const fixtures = [];
 for (const page of pages) {
   const samples = [];
