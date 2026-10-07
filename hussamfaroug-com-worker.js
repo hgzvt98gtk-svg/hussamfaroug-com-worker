@@ -1,10 +1,11 @@
 import { botAuth } from "./bot-auth.js";
-import { authMd, isLegacyDiscoveryPath, wellKnown } from "./metadata.js";
+import { authMd, wellKnown } from "./metadata.js";
 import { convertMd } from "./markdown.js";
 import { b64u, discoveryHtml, linkHdr, secHdrs, varyAccept, webmcp } from "./response.js";
 import { fetchOriginWithRetry, prefersMarkdown, readHtml } from "./proxy.js";
 import { checkRateLimit } from "./rate-limit.js";
 import { recordConversionTime, recordError, recordRequest, recordTiming, TIMING_SAMPLE_RATE } from "./metrics.js";
+import { isLegacyDiscoveryPath } from "./discovery.js";
 
 var encoder = new TextEncoder();
 

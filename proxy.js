@@ -1,8 +1,7 @@
 import { recordError, recordRetrySuccess } from "./metrics.js";
+import { MAX_HTML_BYTES, ORIGIN_RETRY_BASE_DELAY_MS, ORIGIN_TIMEOUT_MS } from "./constants.js";
 
-export const MAX_HTML_BYTES = 1024 * 1024;
-export const ORIGIN_TIMEOUT_MS = 10000;
-export const ORIGIN_RETRY_BASE_DELAY_MS = 100;
+export { MAX_HTML_BYTES, ORIGIN_RETRY_BASE_DELAY_MS, ORIGIN_TIMEOUT_MS };
 
 export function prefersMarkdown(accept) {
   const ranges = accept.toLowerCase().split(",").map(part => {
