@@ -180,7 +180,10 @@ test("deployment verifier handles request failures and rejects unsafe origins", 
     fetchImpl: async () => { throw new TypeError("network failure"); }
   });
   assert.equal(failed.success, false);
-  assert.ok(failed.allEndpoints.every(item => item.status === "❌"));
+  assert.ok(failed.allEndpoints.slice(0, 6).every(item => item.status === "❌"));
+  assert.deepEqual(failed.allEndpoints.slice(6).map(item => item.status), [
+    "NOT CHECKED", "NOT CHECKED", "NOT CHECKED"
+  ]);
 
   const invalid = await verifyDeployment("******example.com", {
     fetchImpl: async () => { throw new Error("must not be called"); }

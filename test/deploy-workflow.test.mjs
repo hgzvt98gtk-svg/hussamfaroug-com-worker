@@ -22,10 +22,10 @@ test("observability PATCH expands secret-backed authorization and propagates HTT
   assert.ok(script, "observability shell command exists");
   const env = { CF_ACCOUNT_ID: "test-account", CLOUDFLARE_API_TOKEN: "test-token-$literal" };
   const result = spawnSync("bash", ["--noprofile", "--norc", "-e", "-c",
-    `curl() { printf '%s\\0' "$@"; }\n${script}`
+    `curl() { printf '%s\\0' "$@" >&2; printf '{"success":true}'; }\n${script}`
   ], { env, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
-  const args = result.stdout.split("\0").slice(0, -1);
+  const args = result.stderr.split("\0").slice(0, -1);
   assert.ok(args.includes("-fsS"), "curl must fail on HTTP errors");
   assert.equal(args[args.indexOf("-X") + 1], "PATCH");
   assert.ok(args.includes("https://api.cloudflare.com/client/v4/accounts/test-account/workers/scripts/hussamfaroug-com/script-settings"));
@@ -40,6 +40,12 @@ test("observability PATCH expands secret-backed authorization and propagates HTT
     `curl() { return 22; }\n${script}`
   ], { env, encoding: "utf8" });
   assert.equal(failure.status, 22, "curl HTTP failures must fail the step");
+
+  const apiFailure = spawnSync("bash", ["--noprofile", "--norc", "-e", "-c",
+    `curl() { printf '{"success":false}'; }\n${script}`
+  ], { env, encoding: "utf8" });
+  assert.notEqual(apiFailure.status, 0, "Cloudflare API errors must fail the step");
+  assert.match(apiFailure.stderr, /did not confirm the observability update/);
 
   for (const token of [undefined, ""]) {
     const missingTokenEnv = { CF_ACCOUNT_ID: env.CF_ACCOUNT_ID };

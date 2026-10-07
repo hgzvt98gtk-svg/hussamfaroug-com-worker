@@ -48,7 +48,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
 
-      - name: Re-enable observability settings
+      - name: Re-enable observability
         run: |
           : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
           response="$(curl -fsS -X PATCH "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/hussamfaroug-com/script-settings" \
