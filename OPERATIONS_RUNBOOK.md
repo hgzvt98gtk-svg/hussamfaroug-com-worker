@@ -123,7 +123,10 @@ origin gateway. Arbitrary custom identity headers are not all recognized.
 
 Proxied responses use `private, no-store` when the original request has
 Authorization, Cookie, X-API-Key, X-Auth-Token, X-Access-Token, Bearer, or
-X-Custom-Auth, or when upstream sends Set-Cookie. Copied CDN cache-control
+X-Custom-Auth, or when upstream sends Set-Cookie. This is a Worker-maintained
+header list, not an inventory proven against origin behavior; before enabling
+personalized origin content, identify every identity-bearing input and test its
+cache policy through the deployed CDN. Copied CDN cache-control
 variants are also restricted. Static discovery metadata remains public.
 Anonymous origin cache directives are preserved; Markdown defaults to no-store
 only when upstream Cache-Control is absent. There is no explicit Worker Cache

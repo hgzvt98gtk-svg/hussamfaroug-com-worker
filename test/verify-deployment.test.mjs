@@ -26,8 +26,8 @@ test("deployment verifier checks Phase 1 endpoints and the healthy Worker path",
 
   assert.equal(report.success, true);
   assert.deepEqual(report.results.phase1, { oauth: true, mcp: true, auth: true });
-  assert.deepEqual(report.results.phase2, { retry: true, rateLimit: true });
-  assert.equal(report.results.phase3.metrics, true);
+  assert.deepEqual(report.results.phase2, { retry: null, rateLimit: null, root: true });
+  assert.equal(report.results.phase3.metrics, null);
   assert.deepEqual(requests.map(item => new URL(item.url).pathname), [
     "/.well-known/openid-configuration", "/.well-known/oauth-protected-resource",
     "/.well-known/oauth-authorization-server", "/.well-known/mcp/server-card.json", "/auth.md", "/"
@@ -35,10 +35,11 @@ test("deployment verifier checks Phase 1 endpoints and the healthy Worker path",
   assert.ok(requests.every(item => item.options.redirect === "manual"));
   assert.ok(requests.every(item => new URL(item.url).searchParams.has("_verify")));
   assert.ok(requests.every(item => item.options.headers["cache-control"] === "no-cache"));
-  assert.equal(report.allEndpoints.length, 8);
-  assert.match(report.allEndpoints[5].endpoint, /retry behavior not exercised/);
-  assert.match(report.allEndpoints[6].endpoint, /rate limit threshold not stress-tested/);
-  assert.match(report.allEndpoints[7].endpoint, /metrics logging is not publicly exposed/);
+  assert.equal(report.allEndpoints.length, 9);
+  assert.equal(report.allEndpoints[5].status, "✅");
+  assert.deepEqual(report.allEndpoints.slice(6).map(item => item.status), [
+    "NOT CHECKED", "NOT CHECKED", "NOT CHECKED"
+  ]);
 });
 
 test("deployment verifier fails OAuth discovery when protected resource metadata is missing", async () => {
@@ -53,7 +54,7 @@ test("deployment verifier fails OAuth discovery when protected resource metadata
 
   assert.equal(report.success, false);
   assert.deepEqual(report.results.phase1, { oauth: false, mcp: true, auth: false });
-  assert.deepEqual(report.results.phase2, { retry: true, rateLimit: true });
+  assert.deepEqual(report.results.phase2, { retry: null, rateLimit: null, root: true });
   assert.deepEqual(report.allEndpoints.slice(0, 2), [
     { endpoint: "/.well-known/openid-configuration", status: "✅" },
     { endpoint: "/.well-known/oauth-protected-resource", status: "❌", detail: "HTTP 404" }
@@ -147,8 +148,9 @@ test("deployment verifier reports malformed and missing endpoint responses as fa
   assert.equal(report.results.phase1.oauth, false);
   assert.equal(report.results.phase1.mcp, false);
   assert.equal(report.results.phase1.auth, false);
-  assert.equal(report.results.phase2.retry, false);
-  assert.equal(report.results.phase3.metrics, false);
+  assert.deepEqual(report.results.phase2, { retry: null, rateLimit: null, root: false });
+  assert.equal(report.results.phase3.metrics, null);
+  assert.equal(report.allEndpoints.find(item => item.endpoint === "Origin retry behavior").status, "NOT CHECKED");
   assert.ok(report.allEndpoints.some(item => item.detail === "HTTP 503"));
 });
 

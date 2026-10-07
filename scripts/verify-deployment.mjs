@@ -8,8 +8,8 @@ const MAX_BODY_BYTES = 1024 * 1024;
 function makeResults() {
   return {
     phase1: { oauth: false, mcp: false, auth: false },
-    phase2: { retry: false, rateLimit: false },
-    phase3: { metrics: false },
+    phase2: { retry: null, rateLimit: null, root: false },
+    phase3: { metrics: null },
     allEndpoints: []
   };
 }
@@ -167,37 +167,39 @@ export async function verifyDeployment(origin = DEFAULT_ORIGIN, {
   try {
     const response = await request(rootPath, "text/html");
     const healthy = response.ok;
-    results.phase2.retry = healthy;
-    results.phase2.rateLimit = healthy ||
-      (response.status === 429 && response.headers.has("Retry-After"));
-    results.phase3.metrics = healthy;
+    results.phase2.root = healthy;
     if (response.body) response.body.cancel().catch(() => {});
     results.allEndpoints.push({
-      endpoint: `${rootPath} (root response check; retry behavior not exercised)`,
+      endpoint: `${rootPath} (root health check)`,
       status: healthy ? "✅" : "❌",
       ...(!healthy ? { detail: `HTTP ${response.status}` } : {})
     });
     results.allEndpoints.push({
-      endpoint: `${rootPath} (root response check; rate limit threshold not stress-tested)`,
-      status: results.phase2.rateLimit ? "✅ (threshold not stress-tested)" : "❌",
-      ...(!results.phase2.rateLimit ? { detail: `HTTP ${response.status}` } : {})
+      endpoint: "Origin retry behavior",
+      status: "NOT CHECKED",
+      detail: "No transient origin failure was induced."
     });
     results.allEndpoints.push({
-      endpoint: "Root response (metrics logging is not publicly exposed)",
-      status: healthy ? "✅" : "❌",
-      ...(!healthy ? { detail: `HTTP ${response.status}` } : {})
+      endpoint: "Rate-limit threshold",
+      status: "NOT CHECKED",
+      detail: "The rate-limit threshold was not stress-tested."
+    });
+    results.allEndpoints.push({
+      endpoint: "Private metrics logging",
+      status: "NOT CHECKED",
+      detail: "Metrics logs are not exposed by the public response."
     });
   } catch (error) {
     const detail = error?.name || "Request failed";
     results.allEndpoints.push(
-      { endpoint: `${rootPath} (root response check; retry behavior not exercised)`, status: "❌", detail },
-      { endpoint: `${rootPath} (root response check; rate limit threshold not stress-tested)`, status: "❌", detail },
-      { endpoint: "Root response (metrics logging is not publicly exposed)", status: "❌", detail }
+      { endpoint: `${rootPath} (root health check)`, status: "❌", detail },
+      { endpoint: "Origin retry behavior", status: "NOT CHECKED", detail: "No transient origin failure was induced." },
+      { endpoint: "Rate-limit threshold", status: "NOT CHECKED", detail: "The rate-limit threshold was not stress-tested." },
+      { endpoint: "Private metrics logging", status: "NOT CHECKED", detail: "Metrics logs are not exposed by the public response." }
     );
   }
 
-  const success = Object.values(results).filter(value => value && !Array.isArray(value))
-    .every(phase => Object.values(phase).every(Boolean));
+  const success = Object.values(results.phase1).every(Boolean) && results.phase2.root;
   return { success, results, allEndpoints: results.allEndpoints };
 }
 
