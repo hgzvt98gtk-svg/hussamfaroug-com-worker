@@ -1,6 +1,7 @@
 import { discoveryLinks, SITE_INFO_TOOL } from "./discovery.js";
+import { PUBLIC_CACHE_CONTROL } from "./constants.js";
 
-export const PUBLIC_CACHE_CONTROL = "public, max-age=3600";
+export { PUBLIC_CACHE_CONTROL };
 
 export function b64u(bytes) {
   var binary = "";

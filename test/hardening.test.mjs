@@ -34,7 +34,7 @@ test("rate limiter isolates clients, including the unknown fallback", () => {
 test("rate limiter memory stays bounded under many distinct clients", () => {
   for (let i = 0; i < RATE_LIMIT_REQUESTS; i++) checkRateLimit("blocked", 0);
   for (let i = 0; i < RATE_LIMIT_MAX_CLIENTS + 50; i++) checkRateLimit("client-" + i, 1);
-  // The oldest entry was evicted, so the limiter cannot grow without bound.
+  // The oldest entry was evicted without scanning the full map, so it can pass again.
   assert.equal(checkRateLimit("blocked", 1), true);
 });
 

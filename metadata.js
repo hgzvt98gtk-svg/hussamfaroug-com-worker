@@ -1,9 +1,8 @@
 import { cachedJson, PUBLIC_CACHE_CONTROL } from "./response.js";
 import { discoveryLinks, isLegacyDiscoveryPath, SITE_INFO_TOOL } from "./discovery.js";
+import { CONTACT } from "./constants.js";
 
 export { isLegacyDiscoveryPath } from "./discovery.js";
-
-const CONTACT = "admin@hussamfaroug.com";
 
 function markdownResponse(text) {
   return new Response(text, {
