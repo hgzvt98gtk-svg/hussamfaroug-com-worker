@@ -136,7 +136,7 @@ test("request failures still fail comparison for a single-page origin", async ()
 
 test("transient failures are retried and the final attempt is measured", async () => {
   const { result, retryDelays } = await benchmark([{ path: "/", bytes: 10_000 }], {
-    markdownResponses: ["network", { status: 503, body: "busy", headers: { "retry-after": "0" } }]
+    markdownResponses: ["network", { status: 503, body: "busy", headers: { "retry-after": "2" } }]
   });
   assert.equal(result.success, true);
   const [warmup, measured] = result.fixtures[0].samples;
@@ -144,7 +144,7 @@ test("transient failures are retried and the final attempt is measured", async (
   assert.equal(warmup.status, 200);
   assert.equal(measured.attempts, 1);
   assert.equal(result.fixtures[0].retries, 2);
-  assert.deepEqual(retryDelays, [1, 0]);
+  assert.deepEqual(retryDelays, [1, 2_000]);
   assert.match(formatBenchmarkMarkdown(result, compareBenchmarks(result)), /Retries: 2 transient failure/);
 });
 
@@ -158,6 +158,17 @@ test("HTTP-date Retry-After values are honored", async () => {
   });
   assert.equal(result.fixtures[0].samples[0].attempts, 2);
   assert.deepEqual(retryDelays, [2_000]);
+});
+
+test("invalid Retry-After values fall back to exponential backoff", async () => {
+  const { retryDelays } = await benchmark([{ path: "/", bytes: 10_000 }], {
+    markdownResponses: [{
+      status: 503,
+      body: "busy",
+      headers: { "retry-after": "not-a-date" }
+    }]
+  });
+  assert.deepEqual(retryDelays, [1]);
 });
 
 test("403 responses are not retried and report which layer likely responded", async () => {
