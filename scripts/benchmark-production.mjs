@@ -22,12 +22,12 @@ function parseArgs(args) {
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
     const value = args[++index];
-    if (!["--iterations", "--warmups", "--label", "--output"].includes(flag) || !value) {
-      throw new Error("Usage: node scripts/benchmark-production.mjs [--iterations N] [--warmups N] [--label NAME] [--output PATH]");
+    if (!['--iterations', '--warmups', '--label', '--output'].includes(flag) || !value) {
+      throw new Error('Usage: node scripts/benchmark-production.mjs [--iterations N] [--warmups N] [--label NAME] [--output PATH]');
     }
-    if (flag === "--iterations" || flag === "--warmups") {
+    if (flag === '--iterations' || flag === '--warmups') {
       const count = Number(value);
-      const maximum = flag === "--iterations" ? 25 : 10;
+      const maximum = flag === '--iterations' ? 25 : 10;
       if (!Number.isInteger(count) || count < 1 || count > maximum) {
         throw new Error(`${flag} must be an integer between 1 and ${maximum}`);
       }
@@ -39,17 +39,17 @@ function parseArgs(args) {
 }
 
 function configuration() {
-  const toml = readFileSync(resolve(root, "wrangler.toml"), "utf8");
+  const toml = readFileSync(resolve(root, 'wrangler.toml'), 'utf8');
   const origin = toml.match(/^\s*ORIGIN\s*=\s*"([^"]+)"/m)?.[1];
   const route = toml.match(/^\s*\{\s*pattern\s*=\s*"([^"]+)"/m)?.[1];
-  if (!origin || !route) throw new Error("wrangler.toml must define vars.ORIGIN and a production route");
-  const routeHost = route.split("/")[0];
-  if (routeHost.includes("*")) throw new Error("The production route must identify one public hostname");
+  if (!origin || !route) throw new Error('wrangler.toml must define vars.ORIGIN and a production route');
+  const routeHost = route.split('/')[0];
+  if (routeHost.includes('*')) throw new Error('The production route must identify one public hostname');
   const workerUrl = `https://${routeHost}`;
   const parsedOrigin = new URL(origin);
   const parsedWorker = new URL(workerUrl);
-  if (!["https:", "http:"].includes(parsedOrigin.protocol) || parsedOrigin.username || parsedOrigin.password) {
-    throw new Error("wrangler.toml ORIGIN must be a public HTTP(S) URL");
+  if (!['https:', 'http:'].includes(parsedOrigin.protocol) || parsedOrigin.username || parsedOrigin.password) {
+    throw new Error('wrangler.toml ORIGIN must be a public HTTP(S) URL');
   }
   return { origin: parsedOrigin, worker: parsedWorker };
 }
@@ -57,11 +57,11 @@ function configuration() {
 const decoder = new TextDecoder();
 function xmlEntities(value) {
   return value.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (entity, code) => {
-    if (code[0] === "#") {
-      const number = code[1].toLowerCase() === "x" ? Number.parseInt(code.slice(2), 16) : Number(code.slice(1));
+    if (code[0] === '#') {
+      const number = code[1].toLowerCase() === 'x' ? Number.parseInt(code.slice(2), 16) : Number(code.slice(1));
       return Number.isInteger(number) && number >= 0 && number <= 0x10ffff ? String.fromCodePoint(number) : entity;
     }
-    return { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" }[code.toLowerCase()];
+    return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[code.toLowerCase()];
   });
 }
 
@@ -95,9 +95,9 @@ async function readLimited(response, limit = MAX_ORIGIN_BYTES) {
 
 async function sourceGet(url, accept) {
   return fetch(url, {
-    method: "GET",
-    redirect: "manual",
-    headers: { accept, "user-agent": USER_AGENT },
+    method: 'GET',
+    redirect: 'manual',
+    headers: { accept, 'user-agent': USER_AGENT },
     signal: AbortSignal.timeout(10_000)
   });
 }
@@ -113,14 +113,14 @@ function sameOriginPath(value, origin, worker) {
 }
 
 async function sitemapPaths(origin, worker) {
-  const sitemapUrl = new URL("/sitemap.xml", origin);
-  const response = await sourceGet(sitemapUrl, "application/xml, text/xml;q=0.9, */*;q=0.1");
+  const sitemapUrl = new URL('/sitemap.xml', origin);
+  const response = await sourceGet(sitemapUrl, 'application/xml, text/xml;q=0.9, */*;q=0.1');
   if (response.status !== 200) {
     await response.body?.cancel().catch(() => {});
     return [];
   }
-  const type = (response.headers.get("content-type") || "").toLowerCase();
-  if (!type.includes("xml")) {
+  const type = (response.headers.get('content-type') || '').toLowerCase();
+  if (!type.includes('xml')) {
     await response.body?.cancel().catch(() => {});
     return [];
   }
@@ -132,8 +132,8 @@ async function sitemapPaths(origin, worker) {
     for (const location of childMaps) {
       const childPath = sameOriginPath(location, origin, worker);
       if (!childPath) continue;
-      const child = await sourceGet(new URL(childPath, origin), "application/xml, text/xml;q=0.9, */*;q=0.1");
-      if (child.status !== 200 || !(child.headers.get("content-type") || "").toLowerCase().includes("xml")) {
+      const child = await sourceGet(new URL(childPath, origin), 'application/xml, text/xml;q=0.9, */*;q=0.1');
+      if (child.status !== 200 || !(child.headers.get('content-type') || '').toLowerCase().includes('xml')) {
         await child.body?.cancel().catch(() => {});
         continue;
       }
@@ -156,8 +156,8 @@ function linkedPaths(html, origin, worker) {
 async function originPage(path, origin) {
   const url = new URL(path, origin);
   if (url.origin !== origin.origin) return null;
-  const response = await sourceGet(url, "text/html, application/xhtml+xml;q=0.9");
-  if (response.status !== 200 || !/(?:text\/html|application\/xhtml\+xml)/i.test(response.headers.get("content-type") || "")) {
+  const response = await sourceGet(url, 'text/html, application/xhtml+xml;q=0.9');
+  if (response.status !== 200 || !/(?:text\/html|application\/xhtml\+xml)/i.test(response.headers.get('content-type') || '')) {
     await response.body?.cancel().catch(() => {});
     return null;
   }
@@ -170,13 +170,13 @@ async function originPage(path, origin) {
   return {
     path,
     sourceHtmlBytes: bytes.byteLength,
-    sourceSha256: createHash("sha256").update(bytes).digest("hex")
+    sourceSha256: createHash('sha256').update(bytes).digest('hex')
   };
 }
 
 async function discoverPages(origin, worker) {
   const paths = await sitemapPaths(origin, worker).catch(() => []);
-  paths.unshift("/");
+  paths.unshift('/');
   const seen = new Set();
   const candidates = [];
   for (const path of paths) {
@@ -187,9 +187,9 @@ async function discoverPages(origin, worker) {
     if (candidates.length >= 50) break;
   }
   if (candidates.length < 3) {
-    const home = candidates.find(page => page.path === "/") || await originPage("/", origin).catch(() => null);
+    const home = candidates.find(page => page.path === '/') || await originPage('/', origin).catch(() => null);
     if (home) {
-      const response = await sourceGet(new URL("/", origin), "text/html");
+      const response = await sourceGet(new URL('/', origin), 'text/html');
       if (response.status === 200) {
         const html = decoder.decode(await readLimited(response));
         for (const path of linkedPaths(html, origin, worker)) {
@@ -205,10 +205,10 @@ async function discoverPages(origin, worker) {
     }
   }
   if (!candidates.length) {
-    throw new Error("Found no eligible HTML pages at the configured origin. No HTML fixtures are injected.");
+    throw new Error('Found no eligible HTML pages at the configured origin. No HTML fixtures are injected.');
   }
   if (candidates.length < TARGETS.length) {
-    const annotation = process.env.GITHUB_ACTIONS === "true" ? "::warning::" : "";
+    const annotation = process.env.GITHUB_ACTIONS === 'true' ? '::warning::' : '';
     console.warn(`${annotation}Reduced-sample mode: found only ${candidates.length} eligible HTML page(s); measuring available distinct pages with incomplete target-size coverage. No HTML fixtures are injected.`);
   }
   const count = Math.min(candidates.length, TARGETS.length);
@@ -236,9 +236,9 @@ async function requestMarkdown(worker, page, iteration, warmup) {
   const started = performance.now();
   try {
     const response = await fetch(url, {
-      method: "GET",
-      redirect: "manual",
-      headers: { accept: "text/markdown", "cache-control": "no-cache", "user-agent": USER_AGENT },
+      method: 'GET',
+      redirect: 'manual',
+      headers: { accept: 'text/markdown', 'cache-control': 'no-cache', 'user-agent': USER_AGENT },
       signal: AbortSignal.timeout(30_000)
     });
     let responseBytes = null;
@@ -246,27 +246,27 @@ async function requestMarkdown(worker, page, iteration, warmup) {
     try {
       responseBytes = (await readLimited(response, 5_000_000)).byteLength;
     } catch (error) {
-      readError = error?.name || "response body read failed";
+      readError = error?.name || 'response body read failed';
     }
     const totalMs = performance.now() - started;
-    const ray = response.headers.get("cf-ray");
-    const cacheStatus = response.headers.get("cf-cache-status");
-    const mitigated = response.headers.get("cf-mitigated");
-    const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() || null;
-    const tokenCount = response.headers.get("x-markdown-tokens");
+    const ray = response.headers.get('cf-ray');
+    const cacheStatus = response.headers.get('cf-cache-status');
+    const mitigated = response.headers.get('cf-mitigated');
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() || null;
+    const tokenCount = response.headers.get('x-markdown-tokens');
     return {
       iteration,
       warmup,
       status: response.status,
       totalMs,
       responseBytes,
-      serverTiming: parseServerTiming(response.headers.get("server-timing")),
+      serverTiming: parseServerTiming(response.headers.get('server-timing')),
       contentType,
       markdownTokens: tokenCount === null ? null : tokenCount,
       cfRay: ray,
       cfCacheStatus: cacheStatus,
       ...(mitigated ? { cfMitigated: mitigated } : {}),
-      ...(!readError && response.status === 200 && contentType !== "text/markdown" ? { error: "unexpected content type" } : {}),
+      ...(!readError && response.status === 200 && contentType !== 'text/markdown' ? { error: 'unexpected content type' } : {}),
       ...(readError ? { error: readError } : {})
     };
   } catch (error) {
@@ -281,7 +281,7 @@ async function requestMarkdown(worker, page, iteration, warmup) {
       markdownTokens: null,
       cfRay: null,
       cfCacheStatus: null,
-      error: error?.name || "request failed"
+      error: error?.name || 'request failed'
     };
   }
 }
@@ -302,7 +302,7 @@ function summarizeFixture(page, samples, warmups) {
     iterations: measured.length,
     warmups,
     errors: samples.filter(sample => sample.status !== 200 || sample.error).length,
-    statusCodes: [...new Set(samples.map(sample => sample.status === null ? "request-error" : String(sample.status)))],
+    statusCodes: [...new Set(samples.map(sample => sample.status === null ? 'request-error' : String(sample.status)))],
     timings: {
       total: statistics(measured.map(sample => sample.totalMs)),
       responseBytes: statistics(measured.map(sample => sample.responseBytes).filter(Number.isFinite)),
@@ -316,12 +316,12 @@ function printTable(fixtures) {
   console.table(fixtures.map(fixture => ({
     target: fixture.name,
     path: fixture.path,
-    "source HTML bytes": fixture.sourceHtmlBytes,
-    "total p50 ms": fixture.timings.total?.p50?.toFixed(2) ?? "n/a",
-    "total p99 ms": fixture.timings.total?.p99?.toFixed(2) ?? "n/a",
-    "conversion p50 ms": fixture.timings.serverTiming.conversion?.p50?.toFixed(2) ?? "not exposed",
-    "conversion p99 ms": fixture.timings.serverTiming.conversion?.p99?.toFixed(2) ?? "not exposed",
-    statuses: fixture.statusCodes.join(", ")
+    'source HTML bytes': fixture.sourceHtmlBytes,
+    'total p50 ms': fixture.timings.total?.p50?.toFixed(2) ?? 'n/a',
+    'total p99 ms': fixture.timings.total?.p99?.toFixed(2) ?? 'n/a',
+    'conversion p50 ms': fixture.timings.serverTiming.conversion?.p50?.toFixed(2) ?? 'not exposed',
+    'conversion p99 ms': fixture.timings.serverTiming.conversion?.p99?.toFixed(2) ?? 'not exposed',
+    statuses: fixture.statusCodes.join(', ')
   })));
 }
 
@@ -341,7 +341,7 @@ for (const page of pages) {
 }
 const result = {
   schemaVersion: 1,
-  type: "production-real-page-benchmark",
+  type: 'production-real-page-benchmark',
   timestamp: new Date().toISOString(),
   label: options.label,
   target: worker.origin,
@@ -349,18 +349,18 @@ const result = {
   iterations: options.iterations,
   warmups: options.warmups,
   sampling: {
-    mode: pages.length < TARGETS.length ? "reduced-sample" : "full-sample",
+    mode: pages.length < TARGETS.length ? 'reduced-sample' : 'full-sample',
     requestedPages: TARGETS.length,
     measuredPages: pages.length
   },
-  unit: "ms",
-  methodology: "Sequential, read-only GET requests with Accept: text/markdown. Up to three distinct real HTML source pages selected closest to 10,000/100,000/500,000 bytes; fewer pages mean incomplete target-size coverage.",
+  unit: 'ms',
+  methodology: 'Sequential, read-only GET requests with Accept: text/markdown. Up to three distinct real HTML source pages selected closest to 10,000/100,000/500,000 bytes; fewer pages mean incomplete target-size coverage.',
   baselineAvailable: false,
   success: fixtures.every(fixture => fixture.errors === 0),
   fixtures
 };
 const output = resolve(root, options.output);
 await mkdir(dirname(output), { recursive: true });
-await writeFile(output, JSON.stringify(result, null, 2) + "\n");
+await writeFile(output, JSON.stringify(result, null, 2) + '\n');
 printTable(fixtures);
 console.log(`\nJSON results: ${output}`);
