@@ -22,7 +22,7 @@ async function benchmark(pages, { sitemap = true, status = 200, githubActions = 
       globalThis.fetch = async (url, options) => {
         assert.equal(options.method, "GET");
         assert.equal(options.redirect, "manual");
-        assert.ok(options.headers["user-agent"].startsWith("hussamfaroug-com-worker-benchmark/"));
+        assert.equal(options.headers["user-agent"], "hussamfaroug-com-worker-production-benchmark/1.0");
         const path = new URL(url).pathname;
         if (options.headers.accept === "text/markdown") {
           assert.ok(pages.some(page => page.path === path));
