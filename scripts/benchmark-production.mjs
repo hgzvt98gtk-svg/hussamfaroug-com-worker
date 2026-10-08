@@ -13,6 +13,9 @@ const TARGETS = [
   { name: "500kb", bytes: 500_000 }
 ];
 const MAX_ORIGIN_BYTES = 1_048_576;
+// Cloudflare's Browser Integrity Check / bot rules reject Node's default
+// `User-Agent: node` with an edge 403 before the Worker runs, so identify the benchmark.
+const USER_AGENT = "hussamfaroug-com-worker-benchmark/1.0 (+https://github.com/hgzvt98gtk-svg/hussamfaroug-com-worker)";
 const options = { iterations: 20, warmups: 3, label: "manual", output: resolve(root, "benchmark-results/current.json") };
 
 function parseArgs(args) {
@@ -94,7 +97,7 @@ async function sourceGet(url, accept) {
   return fetch(url, {
     method: "GET",
     redirect: "manual",
-    headers: { accept },
+    headers: { accept, "user-agent": USER_AGENT },
     signal: AbortSignal.timeout(10_000)
   });
 }
@@ -235,7 +238,7 @@ async function requestMarkdown(worker, page, iteration, warmup) {
     const response = await fetch(url, {
       method: "GET",
       redirect: "manual",
-      headers: { accept: "text/markdown", "cache-control": "no-cache" },
+      headers: { accept: "text/markdown", "cache-control": "no-cache", "user-agent": USER_AGENT },
       signal: AbortSignal.timeout(30_000)
     });
     let responseBytes = null;
@@ -248,6 +251,7 @@ async function requestMarkdown(worker, page, iteration, warmup) {
     const totalMs = performance.now() - started;
     const ray = response.headers.get("cf-ray");
     const cacheStatus = response.headers.get("cf-cache-status");
+    const mitigated = response.headers.get("cf-mitigated");
     const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() || null;
     const tokenCount = response.headers.get("x-markdown-tokens");
     return {
@@ -261,6 +265,7 @@ async function requestMarkdown(worker, page, iteration, warmup) {
       markdownTokens: tokenCount === null ? null : tokenCount,
       cfRay: ray,
       cfCacheStatus: cacheStatus,
+      ...(mitigated ? { cfMitigated: mitigated } : {}),
       ...(!readError && response.status === 200 && contentType !== "text/markdown" ? { error: "unexpected content type" } : {}),
       ...(readError ? { error: readError } : {})
     };

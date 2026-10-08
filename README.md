@@ -62,6 +62,11 @@ do not fail the run, but request errors and latency regression checks still appl
 Discovery still fails if no eligible HTML pages exist.
 Custom fixture HTML cannot be injected through this public proxy, so results
 identify the measured page and its actual HTML size; they are not fixture results.
+Every request sends `User-Agent: hussamfaroug-com-worker-benchmark/1.0 (+repo URL)`
+because Cloudflare's edge rejects Node's default `User-Agent: node` with an HTML
+403 before the Worker runs. If a zone security rule still blocks CI, samples
+record `cf-mitigated`; add a WAF skip rule for that User-Agent rather than
+relaxing the benchmark's failure thresholds.
 
 Use **Actions → Production benchmark → Run workflow** to run the same check in
 GitHub Actions. The workflow publishes JSON and Markdown artifacts and a step
