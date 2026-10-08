@@ -13,6 +13,12 @@ const TARGETS = [
   { name: "500kb", bytes: 500_000 }
 ];
 const MAX_ORIGIN_BYTES = 1_048_576;
+// Cloudflare's edge rejects Node's default `User-Agent: node` with an HTML 403
+// before the Worker runs, so every request identifies this benchmark.
+const USER_AGENT = 'hussamfaroug-com-worker-benchmark/1.0 (+https://github.com/hgzvt98gtk-svg/hussamfaroug-com-worker)';
+const RETRY_STATUSES = new Set([429, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+const RETRY_BASE_MS = Math.max(0, Number(process.env.BENCHMARK_RETRY_BASE_MS) || 500);
 const options = { iterations: 20, warmups: 3, label: "manual", output: resolve(root, "benchmark-results/current.json") };
 
 function parseArgs(args) {
@@ -94,7 +100,7 @@ async function sourceGet(url, accept) {
   return fetch(url, {
     method: 'GET',
     redirect: 'manual',
-    headers: { accept },
+    headers: { accept, 'user-agent': USER_AGENT },
     signal: AbortSignal.timeout(10_000)
   });
 }
@@ -228,56 +234,94 @@ async function discoverPages(origin, worker) {
   return best.pages;
 }
 
-async function requestMarkdown(worker, page, iteration, warmup) {
-  const url = new URL(page.path, worker);
+function respondedBy(response) {
+  if (response.headers.has('cf-mitigated')) return 'cloudflare-challenge';
+  const vary = (response.headers.get('vary') || '').toLowerCase().split(',').map(part => part.trim());
+  if (vary.includes('accept') || response.headers.has('content-signal') || response.headers.has('x-markdown-tokens')) {
+    return 'worker';
+  }
+  return 'cloudflare-edge';
+}
+
+function diagnostics(response, body) {
+  const title = body && /html/i.test(response.headers.get('content-type') || '')
+    ? decoder.decode(body.subarray(0, 65_536)).match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+      .replace(/\s+/g, ' ').trim().slice(0, 120) || null
+    : null;
+  return {
+    respondedBy: respondedBy(response),
+    server: response.headers.get('server'),
+    cfMitigated: response.headers.get('cf-mitigated'),
+    title
+  };
+}
+
+function retryDelay(response, attempt) {
+  const retryAfter = Number(response?.headers.get('retry-after'));
+  const delay = Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter * 1000 : RETRY_BASE_MS * 2 ** (attempt - 1);
+  return Math.min(delay, 5_000);
+}
+
+async function attemptMarkdown(url) {
   const started = performance.now();
   try {
     const response = await fetch(url, {
       method: 'GET',
       redirect: 'manual',
-      headers: { accept: 'text/markdown', 'cache-control': 'no-cache' },
+      headers: { accept: 'text/markdown', 'cache-control': 'no-cache', 'user-agent': USER_AGENT },
       signal: AbortSignal.timeout(30_000)
     });
-    let responseBytes = null;
+    let body = null;
     let readError;
     try {
-      responseBytes = (await readLimited(response, 5_000_000)).byteLength;
+      body = await readLimited(response, 5_000_000);
     } catch (error) {
       readError = error?.name || 'response body read failed';
     }
     const totalMs = performance.now() - started;
-    const ray = response.headers.get('cf-ray');
-    const cacheStatus = response.headers.get('cf-cache-status');
     const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() || null;
     const tokenCount = response.headers.get('x-markdown-tokens');
     return {
-      iteration,
-      warmup,
-      status: response.status,
-      totalMs,
-      responseBytes,
-      serverTiming: parseServerTiming(response.headers.get('server-timing')),
-      contentType,
-      markdownTokens: tokenCount === null ? null : tokenCount,
-      cfRay: ray,
-      cfCacheStatus: cacheStatus,
-      ...(!readError && response.status === 200 && contentType !== 'text/markdown' ? { error: 'unexpected content type' } : {}),
-      ...(readError ? { error: readError } : {})
+      response,
+      sample: {
+        status: response.status,
+        totalMs,
+        responseBytes: body ? body.byteLength : null,
+        serverTiming: parseServerTiming(response.headers.get('server-timing')),
+        contentType,
+        markdownTokens: tokenCount === null ? null : tokenCount,
+        cfRay: response.headers.get('cf-ray'),
+        cfCacheStatus: response.headers.get('cf-cache-status'),
+        ...(response.status !== 200 ? { diagnostics: diagnostics(response, body) } : {}),
+        ...(!readError && response.status === 200 && contentType !== 'text/markdown' ? { error: 'unexpected content type' } : {}),
+        ...(readError ? { error: readError } : {})
+      }
     };
   } catch (error) {
     return {
-      iteration,
-      warmup,
-      status: null,
-      totalMs: performance.now() - started,
-      responseBytes: null,
-      serverTiming: {},
-      contentType: null,
-      markdownTokens: null,
-      cfRay: null,
-      cfCacheStatus: null,
-      error: error?.name || 'request failed'
+      response: null,
+      sample: {
+        status: null,
+        totalMs: performance.now() - started,
+        responseBytes: null,
+        serverTiming: {},
+        contentType: null,
+        markdownTokens: null,
+        cfRay: null,
+        cfCacheStatus: null,
+        error: error?.name || 'request failed'
+      }
     };
+  }
+}
+
+async function requestMarkdown(worker, page, iteration, warmup) {
+  const url = new URL(page.path, worker);
+  for (let attempt = 1; ; attempt++) {
+    const { response, sample } = await attemptMarkdown(url);
+    const transient = sample.status === null || RETRY_STATUSES.has(sample.status);
+    if (!transient || attempt === MAX_ATTEMPTS) return { iteration, warmup, attempts: attempt, ...sample };
+    await new Promise(resolve => setTimeout(resolve, retryDelay(response, attempt)));
   }
 }
 
@@ -297,6 +341,7 @@ function summarizeFixture(page, samples, warmups) {
     iterations: measured.length,
     warmups,
     errors: samples.filter(sample => sample.status !== 200 || sample.error).length,
+    retries: samples.reduce((sum, sample) => sum + (sample.attempts || 1) - 1, 0),
     statusCodes: [...new Set(samples.map(sample => sample.status === null ? 'request-error' : String(sample.status)))],
     timings: {
       total: statistics(measured.map(sample => sample.totalMs)),
@@ -349,7 +394,7 @@ const result = {
     measuredPages: pages.length
   },
   unit: 'ms',
-  methodology: 'Sequential, read-only GET requests with Accept: text/markdown. Up to three distinct real HTML source pages selected closest to 10,000/100,000/500,000 bytes; fewer pages mean incomplete target-size coverage.',
+  methodology: 'Sequential, read-only GET requests with Accept: text/markdown and an identifying User-Agent; network errors, 429, 502, 503 and 504 are retried up to twice with backoff and the final attempt is measured. Up to three distinct real HTML source pages selected closest to 10,000/100,000/500,000 bytes; fewer pages mean incomplete target-size coverage.',
   baselineAvailable: false,
   success: fixtures.every(fixture => fixture.errors === 0),
   fixtures

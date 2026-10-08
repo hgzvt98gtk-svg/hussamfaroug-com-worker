@@ -63,13 +63,26 @@ Discovery still fails if no eligible HTML pages exist.
 Custom fixture HTML cannot be injected through this public proxy, so results
 identify the measured page and its actual HTML size; they are not fixture results.
 
+Every benchmark request sends an identifying `User-Agent`
+(`hussamfaroug-com-worker-benchmark/1.0`): Cloudflare's edge answers Node's
+default `User-Agent: node` with an HTML 403 before the Worker runs. Network
+errors and 429/502/503/504 responses are retried up to twice with backoff
+(honoring `Retry-After`, capped at 5 s); `attempts` is recorded per sample and
+only the final attempt is measured. Other statuses, including 403, are not
+retried. Non-200 samples record `diagnostics.respondedBy`: `cloudflare-challenge`
+(`cf-mitigated` present), `worker` (Worker markers such as `Vary: Accept`; this
+includes origin statuses proxied by the Worker), or `cloudflare-edge` (no Worker
+markers, e.g. a WAF/bot block), plus `server`, `cf-mitigated`, and the HTML
+`<title>`. These details appear in the report's regression signals.
+
 Use **Actions → Production benchmark → Run workflow** to run the same check in
 GitHub Actions. The workflow publishes JSON and Markdown artifacts and a step
 summary. Scheduled runs at 19:00 UTC commit timestamped results under
 `benchmark-results/`; successful 24h/48h checkpoints also update
 `reports/24h-report.md` and `reports/48h-report.md`. `baseline.json` contains
 Cloudflare-reported Worker metrics only; the first successful scheduled page
-benchmark establishes the separate `page-baseline.json`.
+benchmark establishes the separate `page-baseline.json`. The result commit
+rebases onto the latest branch and retries the push up to three times.
 
 The workflow fails for any non-200/request error, total or exposed conversion
 timing p99/max over 500 ms, or a compatible page's mean more than 20% worse than

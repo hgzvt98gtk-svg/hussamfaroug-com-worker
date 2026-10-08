@@ -155,7 +155,15 @@ jobs:
             echo "No benchmark results changed."
           else
             git commit -m "[skip ci] Record production benchmark ($LABEL)"
-            git push
+            for attempt in 1 2 3; do
+              if git pull --rebase origin "$GITHUB_REF_NAME"; then
+                git push && break
+              else
+                git rebase --abort || true
+              fi
+              if [ "$attempt" = 3 ]; then exit 1; fi
+              sleep $((attempt * 5))
+            done
           fi
 
   regression-issue:

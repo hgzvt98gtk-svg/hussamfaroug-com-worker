@@ -21,6 +21,7 @@ test("write permissions are isolated to result commits and issue handling", () =
   assert.equal((workflow.match(/issues: write/g) || []).length, 1);
   assert.match(commitJob, /permissions:\s+contents: write/);
   assert.match(commitJob, /\[skip ci\] Record production benchmark/);
+  assert.match(commitJob, /git pull --rebase origin "\$GITHUB_REF_NAME"/);
   assert.match(issueJob, /permissions:\s+issues: write/);
   assert.match(issueJob, /gh issue (?:list|create|edit)/);
   assert.doesNotMatch(issueJob, /gh label create/);
