@@ -66,6 +66,17 @@ function compatibleFixture(current, previous) {
     current.sourceSha256 === previous.sourceSha256;
 }
 
+function describeFailure(sample) {
+  const details = [];
+  if (sample.diagnostics?.respondedBy) details.push(`responded by ${sample.diagnostics.respondedBy}`);
+  if (sample.diagnostics?.cfMitigated) details.push(`cf-mitigated: ${sample.diagnostics.cfMitigated}`);
+  if (sample.diagnostics?.title) details.push(`title ${JSON.stringify(sample.diagnostics.title)}`);
+  if (sample.error) details.push(sample.error);
+  if (sample.attempts > 1) details.push(`${sample.attempts} attempts`);
+  if (sample.cfRay) details.push(`cf-ray ${sample.cfRay}`);
+  return details.length ? ` (${details.join("; ").replace(/[\r\n|`<>@[\]]/g, " ")})` : "";
+}
+
 export function compareBenchmarks(current, baseline = null) {
   const regressions = [];
   const fixtureComparisons = [];
@@ -79,7 +90,7 @@ export function compareBenchmarks(current, baseline = null) {
     }
     for (const sample of fixture.samples) {
       if (sample.status !== 200 || sample.error) {
-        regressions.push(`${fixture.name}: ${sample.error ? "request/body error" : `HTTP ${sample.status}`} on iteration ${sample.iteration}`);
+        regressions.push(`${fixture.name}: ${sample.error ? "request/body error" : `HTTP ${sample.status}`} on iteration ${sample.iteration}${describeFailure(sample)}`);
       }
     }
     if (fixture.timings.total?.p99 > 500 || fixture.timings.total?.max > 500) {
@@ -134,6 +145,8 @@ export function formatBenchmarkMarkdown(current, comparison) {
     : current.baselineAvailable
       ? "Mean comparisons apply only when the source page path, byte size, and SHA-256 match the real-page baseline."
       : "No real-page baseline exists yet; absolute latency and response status checks still apply.";
+  const retried = current.fixtures.reduce((sum, fixture) => sum + (fixture.retries || 0), 0);
+  const retryNote = retried ? `\n- Retries: ${retried} transient failure(s) were retried; only final attempts are measured.` : "";
   const details = comparison.regressions.length
     ? `\n## Regression signals\n\n${comparison.regressions.map(item => `- ${item}`).join("\n")}\n`
     : "\nNo regression conditions were detected in the measured requests.\n";
@@ -147,7 +160,7 @@ export function formatBenchmarkMarkdown(current, comparison) {
 - Measured: ${current.timestamp}
 - Target: \`${current.target}\`
 - Iterations per page: ${current.iterations}; warmups discarded: ${current.warmups}
-- Method: read-only GET requests to real production HTML pages with \`Accept: text/markdown\`.
+- Method: read-only GET requests to real production HTML pages with \`Accept: text/markdown\` and an identifying \`User-Agent\`; network errors, 429, 502, 503 and 504 are retried up to twice with backoff. Non-200 \`respondedBy\` diagnostics are heuristic labels based on response headers, not verified provenance.${retryNote}
 - Limitation: the configured origin cannot accept injected fixture HTML through the public read-only proxy. Up to three distinct real origin pages are selected closest to 10 KB, 100 KB, and 500 KB source sizes; they are not generated fixtures.
 - Coverage: ${current.fixtures.length} of 3 target slots measured. Fewer pages mean incomplete target-size coverage; missing sizes are not measured or filled with duplicate pages.
 - Conversion timing: production currently does not emit a \`Server-Timing\` header. The script parses it when present; Cloudflare's sampled internal metrics are not request-level fixture measurements and are not substituted here.

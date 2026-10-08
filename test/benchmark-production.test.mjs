@@ -11,20 +11,31 @@ import { compareBenchmarks, formatBenchmarkMarkdown } from "../scripts/benchmark
 const exec = promisify(execFile);
 const script = fileURLToPath(new URL("../scripts/benchmark-production.mjs", import.meta.url));
 
-async function benchmark(pages, { sitemap = true, status = 200, githubActions = false } = {}) {
+async function benchmark(pages, { sitemap = true, status = 200, githubActions = false, markdownResponses = [] } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "benchmark-production-"));
   const output = join(directory, "current.json");
   try {
-    const { stderr } = await exec(process.execPath, ["--input-type=module", "-e", `
+    const { stderr, stdout } = await exec(process.execPath, ["--input-type=module", "-e", `
       import assert from "node:assert/strict";
       import { pathToFileURL } from "node:url";
-      const [pages, script, output, sitemap, status] = JSON.parse(process.argv[1]);
+      const [pages, script, output, sitemap, status, markdownResponses] = JSON.parse(process.argv[1]);
+      const retryDelays = [];
+      Date.now = () => Date.parse("2026-10-08T00:00:00Z");
+      globalThis.setTimeout = (callback, delay, ...args) => {
+        retryDelays.push(delay);
+        queueMicrotask(() => callback(...args));
+        return { unref() {} };
+      };
       globalThis.fetch = async (url, options) => {
         assert.equal(options.method, "GET");
         assert.equal(options.redirect, "manual");
+        assert.ok(options.headers["user-agent"].startsWith("hussamfaroug-com-worker-benchmark/"));
         const path = new URL(url).pathname;
         if (options.headers.accept === "text/markdown") {
           assert.ok(pages.some(page => page.path === path));
+          const scripted = markdownResponses.shift();
+          if (scripted === "network") throw new TypeError("fetch failed");
+          if (scripted) return new Response(scripted.body, { status: scripted.status, headers: scripted.headers });
           return new Response("# Page", {
             status, headers: { "content-type": "text/markdown" }
           });
@@ -46,10 +57,12 @@ async function benchmark(pages, { sitemap = true, status = 200, githubActions = 
       process.argv = [process.execPath, script, "--iterations", "1", "--warmups", "1",
         "--output", output];
       await import(pathToFileURL(script));
-    `, JSON.stringify([pages, script, output, sitemap, status])], {
-      env: { ...process.env, GITHUB_ACTIONS: String(githubActions) }
+      console.log("RETRY_DELAYS:" + JSON.stringify(retryDelays));
+    `, JSON.stringify([pages, script, output, sitemap, status, markdownResponses])], {
+      env: { ...process.env, GITHUB_ACTIONS: String(githubActions), BENCHMARK_RETRY_BASE_MS: "1" }
     });
-    return { result: JSON.parse(await readFile(output, "utf8")), stderr };
+    const delays = stdout.match(/^RETRY_DELAYS:(.*)$/m)?.[1];
+    return { result: JSON.parse(await readFile(output, "utf8")), stderr, retryDelays: JSON.parse(delays || "[]") };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -119,4 +132,56 @@ test("request failures still fail comparison for a single-page origin", async ()
   assert.equal(result.success, false);
   assert.equal(result.fixtures[0].errors, 2);
   assert.equal(compareBenchmarks(result).passed, false);
+});
+
+test("transient failures are retried and the final attempt is measured", async () => {
+  const { result, retryDelays } = await benchmark([{ path: "/", bytes: 10_000 }], {
+    markdownResponses: ["network", { status: 503, body: "busy", headers: { "retry-after": "0" } }]
+  });
+  assert.equal(result.success, true);
+  const [warmup, measured] = result.fixtures[0].samples;
+  assert.equal(warmup.attempts, 3);
+  assert.equal(warmup.status, 200);
+  assert.equal(measured.attempts, 1);
+  assert.equal(result.fixtures[0].retries, 2);
+  assert.deepEqual(retryDelays, [1, 0]);
+  assert.match(formatBenchmarkMarkdown(result, compareBenchmarks(result)), /Retries: 2 transient failure/);
+});
+
+test("HTTP-date Retry-After values are honored", async () => {
+  const { result, retryDelays } = await benchmark([{ path: "/", bytes: 10_000 }], {
+    markdownResponses: [{
+      status: 503,
+      body: "busy",
+      headers: { "retry-after": "Thu, 08 Oct 2026 00:00:02 GMT" }
+    }]
+  });
+  assert.equal(result.fixtures[0].samples[0].attempts, 2);
+  assert.deepEqual(retryDelays, [2_000]);
+});
+
+test("403 responses are not retried and report which layer likely responded", async () => {
+  const edgeBlock = {
+    status: 403,
+    body: "<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head></html>",
+    headers: { "content-type": "text/html", server: "cloudflare", "cf-ray": "abc123-IAD" }
+  };
+  const workerProxied = {
+    status: 403,
+    body: "# Forbidden",
+    headers: { "content-type": "text/markdown", vary: "Accept", server: "cloudflare" }
+  };
+  const { result } = await benchmark([{ path: "/", bytes: 10_000 }], { markdownResponses: [edgeBlock, workerProxied] });
+  assert.equal(result.success, false);
+  const [edge, worker] = result.fixtures[0].samples;
+  assert.equal(edge.attempts, 1);
+  assert.deepEqual(edge.diagnostics, {
+    respondedBy: "cloudflare-edge", server: "cloudflare", cfMitigated: null, title: "Attention Required! | Cloudflare"
+  });
+  assert.equal(worker.diagnostics.respondedBy, "worker");
+  const { regressions } = compareBenchmarks(result);
+  assert.ok(regressions.includes(
+    '10kb: HTTP 403 on iteration 1 (responded by cloudflare-edge; title "Attention Required!   Cloudflare"; cf-ray abc123-IAD)'
+  ));
+  assert.ok(regressions.includes("10kb: HTTP 403 on iteration 1 (responded by worker)"));
 });

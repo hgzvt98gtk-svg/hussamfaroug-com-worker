@@ -155,7 +155,22 @@ jobs:
             echo "No benchmark results changed."
           else
             git commit -m "[skip ci] Record production benchmark ($LABEL)"
-            git push
+            for attempt in 1 2 3; do
+              if ! git pull --rebase origin "$GITHUB_REF_NAME"; then
+                echo "Attempt $attempt: failed to rebase benchmark results onto origin/$GITHUB_REF_NAME." >&2
+                git rebase --abort || true
+              elif git push; then
+                echo "Pushed benchmark results on attempt $attempt."
+                break
+              else
+                echo "Attempt $attempt: failed to push benchmark results to origin/$GITHUB_REF_NAME." >&2
+              fi
+              if [ "$attempt" = 3 ]; then
+                echo "Failed to publish benchmark results after 3 attempts." >&2
+                exit 1
+              fi
+              sleep $((attempt * 5))
+            done
           fi
 
   regression-issue:
