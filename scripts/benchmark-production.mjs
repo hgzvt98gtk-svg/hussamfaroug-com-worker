@@ -13,6 +13,7 @@ const TARGETS = [
   { name: "500kb", bytes: 500_000 }
 ];
 const MAX_ORIGIN_BYTES = 1_048_576;
+const BENCHMARK_USER_AGENT = "hussamfaroug-production-benchmark/1.0 (+https://hussamfaroug.com)";
 const options = { iterations: 20, warmups: 3, label: "manual", output: resolve(root, "benchmark-results/current.json") };
 
 function parseArgs(args) {
@@ -235,7 +236,7 @@ async function requestMarkdown(worker, page, iteration, warmup) {
     const response = await fetch(url, {
       method: 'GET',
       redirect: 'manual',
-      headers: { accept: 'text/markdown', 'cache-control': 'no-cache' },
+      headers: { accept: 'text/markdown', 'cache-control': 'no-cache', 'user-agent': BENCHMARK_USER_AGENT },
       signal: AbortSignal.timeout(30_000)
     });
     let responseBytes = null;
