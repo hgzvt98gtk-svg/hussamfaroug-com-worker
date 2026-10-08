@@ -11,22 +11,26 @@ import { compareBenchmarks, formatBenchmarkMarkdown } from "../scripts/benchmark
 const exec = promisify(execFile);
 const script = fileURLToPath(new URL("../scripts/benchmark-production.mjs", import.meta.url));
 
-async function benchmark(pages, { sitemap = true, status = 200, githubActions = false } = {}) {
+async function benchmark(pages, { sitemap = true, status = 200, githubActions = false, mitigated = null } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "benchmark-production-"));
   const output = join(directory, "current.json");
   try {
     const { stderr } = await exec(process.execPath, ["--input-type=module", "-e", `
       import assert from "node:assert/strict";
       import { pathToFileURL } from "node:url";
-      const [pages, script, output, sitemap, status] = JSON.parse(process.argv[1]);
+      const [pages, script, output, sitemap, status, mitigated] = JSON.parse(process.argv[1]);
       globalThis.fetch = async (url, options) => {
         assert.equal(options.method, "GET");
         assert.equal(options.redirect, "manual");
+        assert.ok(options.headers["user-agent"].startsWith("hussamfaroug-com-worker-benchmark/"));
         const path = new URL(url).pathname;
         if (options.headers.accept === "text/markdown") {
           assert.ok(pages.some(page => page.path === path));
           return new Response("# Page", {
-            status, headers: { "content-type": "text/markdown" }
+            status, headers: {
+              "content-type": "text/markdown",
+              ...(mitigated ? { "cf-mitigated": mitigated } : {})
+            }
           });
         }
         if (path === "/sitemap.xml" && sitemap) {
@@ -46,7 +50,7 @@ async function benchmark(pages, { sitemap = true, status = 200, githubActions = 
       process.argv = [process.execPath, script, "--iterations", "1", "--warmups", "1",
         "--output", output];
       await import(pathToFileURL(script));
-    `, JSON.stringify([pages, script, output, sitemap, status])], {
+    `, JSON.stringify([pages, script, output, sitemap, status, mitigated])], {
       env: { ...process.env, GITHUB_ACTIONS: String(githubActions) }
     });
     return { result: JSON.parse(await readFile(output, "utf8")), stderr };
@@ -119,4 +123,9 @@ test("request failures still fail comparison for a single-page origin", async ()
   assert.equal(result.success, false);
   assert.equal(result.fixtures[0].errors, 2);
   assert.equal(compareBenchmarks(result).passed, false);
+});
+
+test("Cloudflare mitigation details are retained in measured request samples", async () => {
+  const { result } = await benchmark([{ path: "/", bytes: 10_000 }], { mitigated: "challenge" });
+  assert.equal(result.fixtures[0].samples[1].cfMitigated, "challenge");
 });

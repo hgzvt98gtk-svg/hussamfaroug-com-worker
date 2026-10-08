@@ -62,6 +62,9 @@ do not fail the run, but request errors and latency regression checks still appl
 Discovery still fails if no eligible HTML pages exist.
 Custom fixture HTML cannot be injected through this public proxy, so results
 identify the measured page and its actual HTML size; they are not fixture results.
+Requests identify themselves with a benchmark-specific `User-Agent` for edge
+security rules. Samples retain Cloudflare's `cf-mitigated` header when present
+to help diagnose edge blocks; this does not relax request or latency thresholds.
 
 Use **Actions → Production benchmark → Run workflow** to run the same check in
 GitHub Actions. The workflow publishes JSON and Markdown artifacts and a step
